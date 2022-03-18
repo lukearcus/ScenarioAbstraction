@@ -14,8 +14,9 @@ class dynamic_base:
 
 class Drone_base(dynamic_base):
 
-    def __init__(self, init_state, T):
+    def __init__(self, init_state, T, max_acc = 5):
         self.state = init_state
+        self.u_max = max_acc
         self.T = T
         self.crashed = False
         self.A = np.array([[1, 0, 0, T, 0, 0],
@@ -31,7 +32,21 @@ class Drone_base(dynamic_base):
                            [0, T, 0],
                            [0, 0, T]])
 
+        self.A_full_rank = self.A @ self.A
+        self.B_full_rank = np.concatenate((self.A @ self.B, self.B),1)
+
+    def is_valid(self, control):
+        in_dims = self.B.shape[1]
+        num_ins = int(control.size/in_dims)
+        for i in range(num_ins):
+            if np.linalg.norm(control[in_dims*i:in_dims*(i+1)]) >= self.u_max:
+                return False
+        return True
+
     def state_update(self, control):
+        if not self.is_valid(control):
+            control = (control*self.u_max)/np.linalg.norm(control) # bounds the input
+
         if not self.crashed:
             self.state = self.A @ self.state + self.B @ control + self.noise()
 
