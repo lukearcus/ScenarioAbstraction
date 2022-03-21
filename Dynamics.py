@@ -14,7 +14,7 @@ class dynamic_base:
 
 class Drone_base(dynamic_base):
 
-    def __init__(self, init_state, T, max_acc = 5):
+    def __init__(self, init_state, T, max_acc = float('inf')):
         self.state = init_state
         self.u_max = max_acc
         self.T = T
@@ -54,10 +54,10 @@ class Drone_base(dynamic_base):
         return 0
 
 class Drone_gauss(Drone_base):
-    def __init__(self, init_state, T, _mu=0, _sigma=1):
+    def __init__(self, init_state, T,max_acc = float('inf'), _mu=0, _sigma=1):
         self.mu = _mu
         self.sigma = _sigma
-        super().__init__(init_state, T)
+        super().__init__(init_state, T,max_acc)
 
     def noise(self):
         return np.random.normal(self.mu, self.sigma, (6,1))
@@ -66,10 +66,10 @@ class Drone_dryden(Drone_base):
     """
     Assumes low-altitude dryden model
     """
-    def __init__(self, init_state, T, W20=15):
+    def __init__(self, init_state, T,max_acc = float('inf'), W20=15):
         self.gusts = np.random.random((3,1))
         self.sigma_w = 0.1*W20
-        super().__init__(init_state,T)
+        super().__init__(init_state,T,max_acc)
     
     def noise(self):
         sigma_w = self.sigma_w
