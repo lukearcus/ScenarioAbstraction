@@ -34,6 +34,7 @@ class Drone_base(dynamic_base):
 
         self.A_full_rank = self.A @ self.A
         self.B_full_rank = np.concatenate((self.A @ self.B, self.B),1)
+    
 
     def is_valid(self, control):
         in_dims = self.B.shape[1]

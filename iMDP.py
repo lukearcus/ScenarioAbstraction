@@ -39,6 +39,47 @@ class iMDP:
         incs = [list(inc) for inc in np_incs]
         self.edge_diffs = list(itertools.product(*incs))
         self.Actions = self.determine_actions()
+        self.trans_probs = self.determine_probs(num_samples)
+
+    def determine_probs(self, N):
+        probs = dict()
+        for state in self.States:
+            for action in self.Actions[state]:
+                probs[(state, action)] = self.comp_PAC(state, action, N)
+        return probs
+
+    def comp_PAC(self, state, action, N):
+        init = self.dyn.state
+        pos = state + self.part_size/2
+        control = self.B_pinv @ (action - self.A @ pos)
+        N_in = [0 for state in self.States]
+        N_in.append(0)
+        for i in range(N):
+           self.dyn.state = pos 
+           self.dyn.state_update(control)
+           next_cont_state = self.dyn.state
+           next_ind = self.find_state_index(next_cont_state)
+           N_in[next_ind] += 1
+        self.samples_to_prob(N, N_in)
+        self.dyn.state = init
+
+    def samples_to_prob(self, N, N_in):
+        probs = [[0,1] for state in self.States]
+        probs.append([0,1])
+        for j, N_in_j in enumerate(N_in):
+            if N_in_j > 0:
+                if N_in_j < N:
+                    return NotImplementedError
+                else:
+                    probs[j][0]=1
+            else:
+                probs[j][1] = 0
+
+    def find_state_index(self, x):
+        for state in self.States:
+            if np.all(x > state) and np.all(x < state + self.part_size):
+                return self.states.index(state)
+        return len(self.states)+1
 
     def determine_actions(self):
         actions = {i : [] for i in self.States}
