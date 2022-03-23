@@ -60,7 +60,7 @@ class iMDP:
                 print(i/len(self.States))
             for action in self.Actions[state]:
                 if action not in probs:
-                    probs[action] = self.comp_bounds(state, action, N)
+                    probs[action] = self.comp_bounds(action, N)
         return probs
     
     #def determine_probs(self, N):
@@ -72,7 +72,7 @@ class iMDP:
     #            probs[(state, action)] = self.comp_bounds(state, action, N)
     #    return probs
 
-    def comp_bounds(self, state, action, N):
+    def comp_bounds(self, action, N):
         """
         compute probability bounds by adding noise to goal position and checking the resulting state
         """
