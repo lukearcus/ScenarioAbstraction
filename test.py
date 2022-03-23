@@ -23,11 +23,11 @@ ss = StateSpace.ContStateSpace(6, (tuple(0 for i in range(3)) + tuple(-5 for i i
 
 #with open('test_imdp_2.pkl', 'rb') as inp:
 #    test_imdp = pickle.load(inp)
-test_imdp = iMDP.iMDP(ss, test, (5,5,5,4,4,4), 100)
+test_imdp = iMDP.iMDP(ss, test, (3,3,3,3,3,3), 100)
 
-with open('test_imdp_2.pkl', 'wb') as outp:
+with open('test_imdp.pkl', 'wb') as outp:
     pickle.dump(test_imdp, outp, pickle.HIGHEST_PROTOCOL)
-
+import pdb; pdb.set_trace()
 cntrl = controller.controller(test_imdp, test)
 states = [test.state]
 gusts = []

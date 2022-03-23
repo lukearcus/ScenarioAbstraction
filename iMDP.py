@@ -1,14 +1,23 @@
 import numpy as np
 import itertools
+from scipy.stats import beta
 
 class iMDP:
+    """
+    iMDP maker
+    
+    notes:
+        -transition prob definitions are only defined in terms of the goal state, might be better to properly define as p(s_i,a,s_j), but then we have a v. large number
+        -determining actions here overestimates allowed actions which will not work out well because of point above (if we had a state dependend transition prob it would be fine)
 
-    def __init__(self, Cont_state_space, Dynamics, parts, num_samples):
+
+    """
+    def __init__(self, Cont_state_space, Dynamics, parts, num_samples, _beta = 0.01):
         """
         Const_state_space is StateSpace object
         parts is a list/ tuple of partitions for each dimension
         """
-
+        self.beta = _beta
         self.N_d = Cont_state_space.n_dims
         self.ss = Cont_state_space
         self.dyn = Dynamics
@@ -42,44 +51,88 @@ class iMDP:
         self.trans_probs = self.determine_probs(num_samples)
 
     def determine_probs(self, N):
+        """
+        Enumerates over actions to find the probability of arriving in the goal state associated with that action
+        """
         probs = dict()
-        for state in self.States:
+        for i, state in enumerate(self.States):
+            if i % 10 == 0:
+                print(i/len(self.States))
             for action in self.Actions[state]:
-                probs[(state, action)] = self.comp_PAC(state, action, N)
+                if action not in probs:
+                    probs[action] = self.comp_bounds(state, action, N)
         return probs
+    
+    #def determine_probs(self, N):
+    #    probs = dict()
+    #    for i, state in enumerate(self.States):
+    #        if i % 10 == 0:
+    #            print(i/len(self.States))
+    #        for action in self.Actions[state]: # enumerate over just actions??
+    #            probs[(state, action)] = self.comp_bounds(state, action, N)
+    #    return probs
 
-    def comp_PAC(self, state, action, N):
+    def comp_bounds(self, state, action, N):
+        """
+        compute probability bounds by adding noise to goal position and checking the resulting state
+        """
         init = self.dyn.state
-        pos = state + self.part_size/2
-        control = self.B_pinv @ (action - self.A @ pos)
+        pos = action + self.part_size/2
         N_in = [0 for state in self.States]
         N_in.append(0)
         for i in range(N):
-           self.dyn.state = pos 
-           self.dyn.state_update(control)
-           next_cont_state = self.dyn.state
-           next_ind = self.find_state_index(next_cont_state)
-           N_in[next_ind] += 1
-        self.samples_to_prob(N, N_in)
+            self.dyn.state = np.expand_dims(pos,1)
+            next_cont_state = np.expand_dims(pos,1) + self.dyn.noise()
+            next_ind = self.find_state_index(next_cont_state.T)
+            N_in[next_ind] += 1
         self.dyn.state = init
+        return self.PAC_samples_to_prob(N, N_in) # change to PAC
 
-    def samples_to_prob(self, N, N_in):
+    #def comp_bounds(self, state, action, N):
+    #    init = self.dyn.state
+    #    pos = state + self.part_size/2
+    #    control = self.B_pinv @ (action+self.part_size/2 - self.dyn.A_full_rank @ pos)
+    #    control = np.expand_dims(control, 1)
+    #    N_in = [0 for state in self.States]
+    #    N_in.append(0)
+    #    for i in range(N):
+    #       self.dyn.state = np.expand_dims(pos,1) 
+    #       self.dyn.state_update(control)
+    #       next_cont_state = self.dyn.state
+    #       next_ind = self.find_state_index(next_cont_state.T)
+    #       N_in[next_ind] += 1
+    #    self.dyn.state = init
+    #    return self.freq_samples_to_prob(N, N_in) # change to PAC
+
+    def PAC_samples_to_prob(self, N, N_in):
+        beta_bar = self.beta/(2*N)
+        probs = [[0,1] for state in self.States]
+        probs.append([0,1])
+        for j, N_in_j in enumerate(N_in):
+            if N_in_j < N:
+                probs[j][0] = beta.ppf(beta_bar, N_in_j + 1, N-(N_in_j+1)+1) # should precompute these
+                probs[j][1] = beta.ppf(1-beta_bar, N_in_j+1, N-(N_in_j+1)+1)
+            else:
+                probs[j][0] = 1
+        return probs
+
+    def freq_samples_to_prob(self, N, N_in):
         probs = [[0,1] for state in self.States]
         probs.append([0,1])
         for j, N_in_j in enumerate(N_in):
             if N_in_j > 0:
-                if N_in_j < N:
-                    return NotImplementedError
-                else:
-                    probs[j][0]=1
+                freq_prob = N_in_j/N
+                probs[j][0] = freq_prob - 0.01
+                probs[j][1] = freq_prob + 0.01
             else:
                 probs[j][1] = 0
+        return probs
 
     def find_state_index(self, x):
         for state in self.States:
             if np.all(x > state) and np.all(x < state + self.part_size):
-                return self.states.index(state)
-        return len(self.states)+1
+                return self.States.index(state)
+        return len(self.States)
 
     def determine_actions(self):
         actions = {i : [] for i in self.States}
@@ -91,9 +144,6 @@ class iMDP:
             for prev_state in backwards:
                 actions[prev_state].append(state)
         return actions
-
-
-
 
     def find_unsafes(self):
         """
@@ -122,32 +172,43 @@ class iMDP:
                 and self.ss.check_goal(state+self.part_size)]
         return goals
 
-    def backward_states(self, d_j):
-        """
-        Assuming backward reachable set is convex (I think it is??)
-
-        Needs to be sped up - once we have found an unreachable state we know that all states beyond that state are also unreachable!
-        """
-        max_change = np.zeros((self.N_d))
-        for i, max_vec in enumerate(self.max_acc_vecs.T):
-            max_change_curr = np.abs(self.A_pinv @ (d_j - max_vec) - d_j)
-
-            max_change = np.maximum(max_change_curr, max_change)
-
-
+    def backward_states(self, curr):
         reachable_states = []
         for state in self.States:
-            reachable = True
-            for diff in self.edge_diffs:
-                edge = np.array(state) + np.array(diff)
-                if np.any(np.abs(edge-d_j) > max_change):
-                    reachable = False
-                    #if not self.is_reachable(d_j, edge):
-                    #reachable = False
-                    break
-            if reachable: reachable_states.append(state)
+            centre = state + self.part_size/2
+            if self.is_reachable(curr, centre):
+                reachable_states.append(state)
         return reachable_states
+    
+    #def backward_states(self, d_j):
+    #    """
+    #    Assuming backward reachable set is convex (I think it is??)
+
+    #    Needs to be sped up - once we have found an unreachable state we know that all states beyond that state are also unreachable!
+    #    """
+    #    max_change = np.zeros((self.N_d))
+    #    for i, max_vec in enumerate(self.max_acc_vecs.T):
+    #        max_change_curr = np.abs(self.A_pinv @ (d_j - max_vec) - d_j)
+
+    #        max_change = np.maximum(max_change_curr, max_change)
+
+
+    #    reachable_states = []
+    #    for state in self.States:
+    #        reachable = True
+    #        for diff in self.edge_diffs:
+    #            edge = np.array(state) + np.array(diff)
+    #            if np.any(np.abs(edge-d_j) > max_change):
+    #                reachable = False
+    #                #if not self.is_reachable(d_j, edge):
+    #                #reachable = False
+    #                break
+    #        if reachable: reachable_states.append(state)
+    #    return reachable_states
 
     def is_reachable(self, d_j, x):
+        """
+        Check if we can go from x to d_j
+        """
         u = self.B_pinv @ (d_j- self.dyn.A_full_rank @ x)
         return self.dyn.is_valid(u)

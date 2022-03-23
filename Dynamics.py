@@ -37,19 +37,25 @@ class Drone_base(dynamic_base):
     
 
     def is_valid(self, control):
-        in_dims = self.B.shape[1]
-        num_ins = int(control.size/in_dims)
-        for i in range(num_ins):
-            if np.linalg.norm(control[in_dims*i:in_dims*(i+1)]) >= self.u_max:
+        split = self.split_control(control)
+        for control in split:
+            if np.linalg.norm(control) >= self.u_max:
                 return False
         return True
 
-    def state_update(self, control):
-        if not self.is_valid(control):
-            control = (control*self.u_max)/np.linalg.norm(control) # bounds the input
+    def split_control(self, control):
+        in_dims = self.B.shape[1]
+        num_ins = int(control.size/in_dims)
+        return np.split(control, num_ins)
 
-        if not self.crashed:
-            self.state = self.A @ self.state + self.B @ control + self.noise()
+    def state_update(self, control):
+        split_controls = self.split_control(control)
+        for control in split_controls:
+            if not self.is_valid(control):
+                control = (control*self.u_max)/np.linalg.norm(control) # bounds the input
+
+            if not self.crashed:
+                self.state = self.A @ self.state + self.B @ control + self.noise()
 
     def noise(self):
         return 0
@@ -90,9 +96,10 @@ class Drone_dryden(Drone_base):
         V = np.linalg.norm(self.state[3:])
         T = self.T
        
+        pos_noise = np.array([[T, 0, 0],[0,T,0],[0,0,T]]) @ self.gusts
+        
         self.gusts[0] = (1-V*T/L_u)*np.copy(self.gusts[0]) + np.sqrt(2*V*T/L_u)*sigma_u*np.random.standard_normal()
         self.gusts[1] = (1-V*T/L_v)*np.copy(self.gusts[1]) + np.sqrt(2*V*T/L_v)*sigma_v*np.random.standard_normal()
         self.gusts[2] = (1-V*T/L_w)*np.copy(self.gusts[2]) + np.sqrt(2*V*T/L_w)*sigma_w*np.random.standard_normal()
-        pos_noise = np.zeros((3,1)) 
         return np.concatenate((pos_noise, self.gusts))
 
