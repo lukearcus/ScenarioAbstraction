@@ -96,7 +96,7 @@ class Drone_dryden(Drone_base):
         V = np.linalg.norm(self.state[3:])
         T = self.T
        
-        pos_noise = np.array([[T, 0, 0],[0,T,0],[0,0,T]]) @ self.gusts
+        pos_noise = np.zeros((3,1))
         
         self.gusts[0] = (1-V*T/L_u)*np.copy(self.gusts[0]) + np.sqrt(2*V*T/L_u)*sigma_u*np.random.standard_normal()
         self.gusts[1] = (1-V*T/L_v)*np.copy(self.gusts[1]) + np.sqrt(2*V*T/L_v)*sigma_v*np.random.standard_normal()
