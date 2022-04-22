@@ -12,8 +12,8 @@ init_pos = np.ones((3,1))*1
 init_vel = np.zeros((3,1))
 init = np.concatenate((init_pos,init_vel))
 T=1
-test = Dynamics.Drone_dryden(init, T, 10)
-control = np.ones((3,1))*1
+test = Dynamics.Full_Drone_dryden(init, T, 10, -10)
+control = np.ones((6,1))*1
 
 
 

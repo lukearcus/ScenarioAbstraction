@@ -1,6 +1,7 @@
 import numpy as np
 import itertools
 from scipy.stats import beta
+from scipy.spatial import Delaunay
 
 class iMDP:
     """
@@ -23,23 +24,35 @@ class iMDP:
         self.dyn = Dynamics
         min_pos = Cont_state_space.valid_range[0]
         self.part_size = (Cont_state_space.valid_range[1]-Cont_state_space.valid_range[0])/parts
-        increments = []
+        corner_increments = []
+        state_increments = []
         for dim in range(self.N_d):
             dim_inc = []
+            state_inc = []
             curr_inc = float(min_pos[dim])
             for i in range(parts[dim]):
+                state_inc.append(curr_inc+self.part_size[dim]/2)
                 dim_inc.append(curr_inc)
                 curr_inc += self.part_size[dim]
-            increments.append(dim_inc)
-        self.States = list(itertools.product(*increments))
+            dim_inc.append(curr_inc)
+            corner_increments.append(dim_inc)
+            state_increments.append(state_inc)
+        self.Corners = list(itertools.product(*corner_increments))
+        self.States = list(itertools.product(*state_increments))
+        self.Corners_to_states = {}
+        for corner in self.Corners:
+            self.Corners_to_states[corner] = []
+            for state in self.States:
+                if np.all(np.abs(np.array(state)-np.array(corner)) <= self.part_size*0.55):
+                    self.Corners_to_states[corner].append(state)
         self.Goals = self.find_goals()
         self.Unsafes = self.find_unsafes()
        
-        self.max_acc_vecs = np.zeros((self.dyn.B.shape))
-        for i in range(self.dyn.B.shape[1]):
-            control = np.zeros((self.dyn.B.shape[1], 1))
-            control[i] = self.dyn.u_max
-            self.max_acc_vecs[:,i] = (self.dyn.B @ control).flatten()
+        #self.max_acc_vecs = np.zeros((self.dyn.B.shape))
+        #for i in range(self.dyn.B.shape[1]):
+        #    control = np.zeros((self.dyn.B.shape[1], 1))
+        #    control[i] = self.dyn.u_max
+        #    self.max_acc_vecs[:,i] = (self.dyn.B @ control).flatten()
 
         self.A_pinv = np.linalg.pinv(self.dyn.A)
 
@@ -135,14 +148,32 @@ class iMDP:
         return len(self.States)
 
     def determine_actions(self):
-        actions = {i : [] for i in self.States}
-        for i, state in enumerate(self.States):
-            if i % 100 == 0:
-                print(i/len(self.States))
-            centre = state + self.part_size/2
-            backwards = self.backward_states(centre)
-            for prev_state in backwards:
-                actions[prev_state].append(state)
+        u = [[self.dyn.u_min[i], self.dyn.u_max[i]] for i in range(len(self.dyn.u_max))]
+        x_inv_area = np.zeros((2**len(self.dyn.u_max), self.dyn.A.shape[0]))
+        for i, u_elem in enumerate(itertools.product(*u)):
+            list_elem = list(u_elem)
+            x_inv_area[i,:] = (self.A_pinv @ (self.dyn.B @ np.array(list_elem))).flatten()
+        x_inv_hull = Delaunay(x_inv_area, qhull_options='QJ')
+
+        corners_array = np.array(self.Corners)
+        
+        actions = {i : [] for i in self.States if i not in self.Unsafes}
+
+        for act in actions:
+            state_counter = {i: 0 for i in self.States if i not in self.Unsafes}
+            A_inv_d = self.A_pinv @ np.array(act)
+            all_vertices = A_inv_d - corners_array
+            in_hull = x_inv_hull.find_simplex(all_vertices) >= 0
+            if np.any(in_hull):
+                for val in corners_array[in_hull]:
+                    for state in self.Corners_to_states[tuple(val)]:
+                        if state not in self.Unsafes:
+                            state_counter[state]+=1
+                            if state_counter[state] == 2**self.N_d:
+                                actions[act].append(state)
+
+        import pdb; pdb.set_trace()
+
         return actions
 
     def find_unsafes(self):
