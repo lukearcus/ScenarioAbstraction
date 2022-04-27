@@ -4,6 +4,7 @@ class dynamic_base:
 
     def __init__(self, init_state):
         self.state = init_state
+        self.grouped_timesteps = 1
 
     def state_update(self):
         # update state
@@ -64,6 +65,7 @@ class Drone_base(dynamic_base):
 
 class Full_Drone_Base(Drone_base):
     def __init__(self, init_state, T, max_acc = float('inf'), min_acc = -float('inf')):
+        self.grouped_timesteps = 2
         self.state = init_state
         self.T = T
         self.crashed = False
@@ -81,7 +83,7 @@ class Full_Drone_Base(Drone_base):
                            [0, 0, T]])
 
         self.A_full_rank = self.A @ self.A
-        self.B_full_rank = np.concatenate((self.A @ self.B, self.B),1)
+        self.B_full_rank = np.concatenate((self.A @ self.B, self.B), 1)
         self.A_1_step = np.copy(self.A)
         self.A = self.A_full_rank
         self.B = self.B_full_rank

@@ -83,9 +83,9 @@ class iMDP:
             next_ind = self.find_state_index(next_cont_state.T)
             N_in[next_ind] += 1
         self.dyn.state = init
-        return self.PAC_samples_to_prob(N, N_in)
+        return self.samples_to_prob(N, N_in)
 
-    def PAC_samples_to_prob(self, N, N_in):
+    def samples_to_prob(self, N, N_in):
         beta_bar = self.beta/(2*N)
         probs = [[0,1] for state in self.States]
         probs.append([0,1])
@@ -98,18 +98,6 @@ class iMDP:
                 probs[j][1] = beta.ppf(1-beta_bar, N_in_j+1, N-(N_in_j+1)+1)
             else:
                 probs[j][0] = 1
-        return probs
-
-    def freq_samples_to_prob(self, N, N_in):
-        probs = [[0,1] for state in self.States]
-        probs.append([0,1])
-        for j, N_in_j in enumerate(N_in):
-            if N_in_j > 0:
-                freq_prob = N_in_j/N
-                probs[j][0] = freq_prob - 0.01
-                probs[j][1] = freq_prob + 0.01
-            else:
-                probs[j][1] = 0
         return probs
 
     def find_state_index(self, x):
@@ -185,3 +173,49 @@ class iMDP:
         """
         u = self.B_pinv @ (d_j- self.dyn.A_full_rank @ x)
         return self.dyn.is_valid(u)
+
+class MDP(iMDP):
+
+    def samples_to_prob(self, N, N_in):
+        probs = [[0,1] for state in self.States]
+        probs.append([0,1])
+        for j, N_in_j in enumerate(N_in):
+            if N_in_j > 0:
+                freq_prob = N_in_j/N
+                probs[j][0] = max(0, freq_prob - 0.01)
+                probs[j][1] = min(1, freq_prob + 0.01)
+            else:
+                probs[j][1] = 0
+        return probs
+
+
+class PRISM_writer:
+
+    def __init__(self, model, N=-1, mode="interval"):
+        if N == -1:
+            horizon = "infinite"
+        else:
+            horizon = str(N) + "_steps"
+        self.filename = "ScenAbs_" + type(model.dyn).__name__ + "_" + mode + "_" + horizon + ".prism"
+        
+        if horizon == "infinite":
+            raise NotImplementedError
+        else:
+            header = [
+                    "// " + type(model).__name__ + " (scenario-based abstraction method) \n\n",
+                    "mdp \n\n",
+                    "const int Nhor = " + str(int(N/model.dyn.grouped_timesteps)) + "; \n",
+                    "const int regions = " + str(int(len(model.States))) + "; \n\n", #maybe -1?
+                    "module iMDP \n\n",
+                    ]
+            variable_defs = [
+                    "\tk : [0..Nhor]; \n",
+                    "\tx : [-1..regions]; \n\n",
+                    ]
+        self.write_file(header+variable_defs)
+    
+
+    def write_file(self, content, mode="w"):
+        filehandle = open(file, mode)
+        filehandle.writeLines(content)
+        filehandle.close()
