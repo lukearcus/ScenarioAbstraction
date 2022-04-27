@@ -216,6 +216,6 @@ class PRISM_writer:
     
 
     def write_file(self, content, mode="w"):
-        filehandle = open(file, mode)
+        filehandle = open(self.filename, mode)
         filehandle.writeLines(content)
         filehandle.close()
