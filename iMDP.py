@@ -47,12 +47,6 @@ class iMDP:
                     self.Corners_to_states[corner].append(state)
         self.Goals = self.find_goals()
         self.Unsafes = self.find_unsafes()
-       
-        #self.max_acc_vecs = np.zeros((self.dyn.B.shape))
-        #for i in range(self.dyn.B.shape[1]):
-        #    control = np.zeros((self.dyn.B.shape[1], 1))
-        #    control[i] = self.dyn.u_max
-        #    self.max_acc_vecs[:,i] = (self.dyn.B @ control).flatten()
 
         self.A_pinv = np.linalg.pinv(self.dyn.A)
 
@@ -74,15 +68,6 @@ class iMDP:
             if len(self.Actions[action]) > 0:
                 probs[action] = self.comp_bounds(action, N)
         return probs
-    
-    #def determine_probs(self, N):
-    #    probs = dict()
-    #    for i, state in enumerate(self.States):
-    #        if i % 10 == 0:
-    #            print(i/len(self.States))
-    #        for action in self.Actions[state]: # enumerate over just actions??
-    #            probs[(state, action)] = self.comp_bounds(state, action, N)
-    #    return probs
 
     def comp_bounds(self, action, N):
         """
@@ -98,23 +83,7 @@ class iMDP:
             next_ind = self.find_state_index(next_cont_state.T)
             N_in[next_ind] += 1
         self.dyn.state = init
-        return self.PAC_samples_to_prob(N, N_in) # change to PAC
-
-    #def comp_bounds(self, state, action, N):
-    #    init = self.dyn.state
-    #    pos = state + self.part_size/2
-    #    control = self.B_pinv @ (action+self.part_size/2 - self.dyn.A_full_rank @ pos)
-    #    control = np.expand_dims(control, 1)
-    #    N_in = [0 for state in self.States]
-    #    N_in.append(0)
-    #    for i in range(N):
-    #       self.dyn.state = np.expand_dims(pos,1) 
-    #       self.dyn.state_update(control)
-    #       next_cont_state = self.dyn.state
-    #       next_ind = self.find_state_index(next_cont_state.T)
-    #       N_in[next_ind] += 1
-    #    self.dyn.state = init
-    #    return self.freq_samples_to_prob(N, N_in) # change to PAC
+        return self.PAC_samples_to_prob(N, N_in)
 
     def PAC_samples_to_prob(self, N, N_in):
         beta_bar = self.beta/(2*N)
@@ -173,9 +142,6 @@ class iMDP:
                             state_counter[state]+=1
                             if state_counter[state] == 2**self.N_d:
                                 actions[act].append(state)
-
-        #import pdb; pdb.set_trace()
-
         return actions
 
     def find_unsafes(self):
@@ -213,32 +179,6 @@ class iMDP:
                 reachable_states.append(state)
         return reachable_states
     
-    #def backward_states(self, d_j):
-    #    """
-    #    Assuming backward reachable set is convex (I think it is??)
-
-    #    Needs to be sped up - once we have found an unreachable state we know that all states beyond that state are also unreachable!
-    #    """
-    #    max_change = np.zeros((self.N_d))
-    #    for i, max_vec in enumerate(self.max_acc_vecs.T):
-    #        max_change_curr = np.abs(self.A_pinv @ (d_j - max_vec) - d_j)
-
-    #        max_change = np.maximum(max_change_curr, max_change)
-
-
-    #    reachable_states = []
-    #    for state in self.States:
-    #        reachable = True
-    #        for diff in self.edge_diffs:
-    #            edge = np.array(state) + np.array(diff)
-    #            if np.any(np.abs(edge-d_j) > max_change):
-    #                reachable = False
-    #                #if not self.is_reachable(d_j, edge):
-    #                #reachable = False
-    #                break
-    #        if reachable: reachable_states.append(state)
-    #    return reachable_states
-
     def is_reachable(self, d_j, x):
         """
         Check if we can go from x to d_j
