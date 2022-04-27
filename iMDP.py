@@ -68,12 +68,11 @@ class iMDP:
         Enumerates over actions to find the probability of arriving in the goal state associated with that action
         """
         probs = dict()
-        for i, state in enumerate(self.States):
+        for i, action in enumerate(self.Actions):
             if i % 10 == 0:
-                print(i/len(self.States))
-            for action in self.Actions[state]:
-                if action not in probs:
-                    probs[action] = self.comp_bounds(action, N)
+                print(i/len(self.Actions))
+            if len(self.Actions[action]) > 0:
+                probs[action] = self.comp_bounds(action, N)
         return probs
     
     #def determine_probs(self, N):
@@ -90,7 +89,7 @@ class iMDP:
         compute probability bounds by adding noise to goal position and checking the resulting state
         """
         init = self.dyn.state
-        pos = action + self.part_size/2
+        pos = action
         N_in = [0 for state in self.States]
         N_in.append(0)
         for i in range(N):
@@ -123,7 +122,10 @@ class iMDP:
         probs.append([0,1])
         for j, N_in_j in enumerate(N_in):
             if N_in_j < N:
-                probs[j][0] = beta.ppf(beta_bar, N_in_j + 1, N-(N_in_j+1)+1) # should precompute these
+                if N_in_j == 0:
+                    probs[j][0] = 0
+                else:
+                    probs[j][0] = beta.ppf(beta_bar, N_in_j + 1, N-(N_in_j+1)+1) # should precompute these
                 probs[j][1] = beta.ppf(1-beta_bar, N_in_j+1, N-(N_in_j+1)+1)
             else:
                 probs[j][0] = 1
@@ -143,7 +145,7 @@ class iMDP:
 
     def find_state_index(self, x):
         for state in self.States:
-            if np.all(x > state) and np.all(x < state + self.part_size):
+            if np.all(x > state - self.part_size/2) and np.all(x < state + self.part_size/2):
                 return self.States.index(state)
         return len(self.States)
 
@@ -172,7 +174,7 @@ class iMDP:
                             if state_counter[state] == 2**self.N_d:
                                 actions[act].append(state)
 
-        import pdb; pdb.set_trace()
+        #import pdb; pdb.set_trace()
 
         return actions
 

@@ -82,7 +82,7 @@ class Full_Drone_Base(Drone_base):
 
         self.A_full_rank = self.A @ self.A
         self.B_full_rank = np.concatenate((self.A @ self.B, self.B),1)
-
+        self.A_1_step = np.copy(self.A)
         self.A = self.A_full_rank
         self.B = self.B_full_rank
         self.u_max = np.ones((self.B.shape[1],1)) * max_acc
@@ -105,7 +105,8 @@ class Full_Drone_gauss(Full_Drone_Base):
         super().__init__(init_state, T,max_acc, min_acc)
 
     def noise(self):
-        return np.random.normal(self.mu, self.sigma, (6,1))
+        return self.A_1_step @ np.random.normal(self.mu, self.sigma, (6,1)) + np.random.normal(self.mu, self.sigma, (6,1))
+
 
 class Drone_dryden(Drone_base):
     """
@@ -152,6 +153,9 @@ class Full_Drone_dryden(Full_Drone_Base):
         super().__init__(init_state, T, max_acc, min_acc)
     
     def noise(self):
+        return self.A_1_step @ self.single_noise() + self.single_noise()
+
+    def single_noise(self):
         sigma_w = self.sigma_w
         h = float(self.state[2])/0.3048
         if h < 0:
@@ -170,7 +174,6 @@ class Full_Drone_dryden(Full_Drone_Base):
         T = self.T
        
         pos_noise = np.zeros((3,1))
-        
         self.gusts[0] = (1-V*T/L_u)*np.copy(self.gusts[0]) + np.sqrt(2*V*T/L_u)*sigma_u*np.random.standard_normal()
         self.gusts[1] = (1-V*T/L_v)*np.copy(self.gusts[1]) + np.sqrt(2*V*T/L_v)*sigma_v*np.random.standard_normal()
         self.gusts[2] = (1-V*T/L_w)*np.copy(self.gusts[2]) + np.sqrt(2*V*T/L_w)*sigma_w*np.random.standard_normal()
