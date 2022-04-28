@@ -213,6 +213,38 @@ class PRISM_writer:
                     "\tx : [-1..regions]; \n\n",
                     ]
         self.write_file(header+variable_defs)
+        
+        for k in range(0, N, model.dyn.grouped_timesteps):
+
+            if horizon == 'finite':
+                action_defs += ["\t// Actions for k="+str(k)+"\n"]
+            else:
+                action_defs = []
+
+            action_defs += ["\t// Delta="+str(model.dyn.grouped_timesteps) + "\n"]
+
+            bool_cont = k % self.dyn.grouped_timesteps == 0
+
+            if (k + self.dyn.grouped_timesteps <= N and bool_cont) or horizon == 'infinite':
+
+                for a in range(len(model.Actions)):
+                    actionLabel = "[a_"+str(a)+"_d_"+str(model.dyn.grouped_timesteps)+"]"
+                    enabledIn = model.Actions[a]
+
+                    if len(enabledIn) > 0:
+                        guardPieces = ["x="+str(i) for i in enabledIn]
+                        sep = " | "
+                    
+                    if horizon == "infinite":
+                        guard = sep.join(guardPieces)
+                        kprime = ""
+                    else:
+                        guardStates = sep.join(guardPieces)
+                        guard = "k="+str(int(k/model.dyn.grouped_timesteps)) + " & ("+guardStates+")"
+                        kprime = "&(k'=k+"+str(1)) + ")"
+
+                    if mode == "interval":
+                        interval_idxs = 
     
 
     def write_file(self, content, mode="w"):
