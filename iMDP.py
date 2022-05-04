@@ -2,6 +2,7 @@ import numpy as np
 import itertools
 from scipy.stats import beta
 from scipy.spatial import Delaunay
+import progressbar
 
 class iMDP:
     """
@@ -39,12 +40,13 @@ class iMDP:
             state_increments.append(state_inc)
         self.Corners = list(itertools.product(*corner_increments))
         self.States = list(itertools.product(*state_increments))
-        self.Corners_to_states = {}
-        for corner in self.Corners:
-            self.Corners_to_states[corner] = []
-            for state in self.States:
-                if np.all(np.abs(np.array(state)-np.array(corner)) <= self.part_size*0.55):
-                    self.Corners_to_states[corner].append(state)
+        self.Corners_to_states = {corner: [] for corner in self.Corners}
+        corners = np.array(self.Corners).T
+
+        for state in progressbar.progressbar(self.States):
+            adj_corners = np.where(np.all((corners - np.expand_dims(np.array(state),1)) <= np.expand_dims(self.part_size*0.55,1)))[0]
+            for adj_corner in adj_corners:
+                self.Corners_to_states[self.Corners[adj_corner]].append(state)
         self.Goals = self.find_goals()
         self.Unsafes = self.find_unsafes()
 
@@ -107,41 +109,70 @@ class iMDP:
         return len(self.States)
 
     def determine_actions(self):
+        
         u = [[self.dyn.u_min[i], self.dyn.u_max[i]] for i in range(len(self.dyn.u_max))]
         x_inv_area = np.zeros((2**len(self.dyn.u_max), self.dyn.A.shape[0]))
         for i, u_elem in enumerate(itertools.product(*u)):
             list_elem = list(u_elem)
             x_inv_area[i,:] = (self.A_pinv @ (self.dyn.B @ np.array(list_elem))).flatten()
-        x_inv_hull = Delaunay(x_inv_area, qhull_options='QJ')
-
         corners_array = np.array(self.Corners)
-        
-        actions = {i : [] for i in self.States if i not in self.Unsafes}
 
-        for act in actions:
-            state_counter = {i: 0 for i in self.States if i not in self.Unsafes}
-            A_inv_d = self.A_pinv @ np.array(act)
-            all_vertices = A_inv_d - corners_array
-            in_hull = x_inv_hull.find_simplex(all_vertices) >= 0
-            if np.any(in_hull):
-                for val in corners_array[in_hull]:
-                    for state in self.Corners_to_states[tuple(val)]:
-                        if state not in self.Unsafes:
-                            state_counter[state]+=1
-                            if state_counter[state] == 2**self.N_d:
-                                actions[act].append(state)
+        actions = {i : [] for i in self.States if i not in self.Unsafes}
+        dim_equal = self.dyn.A.shape[0] == self.dyn.B.shape[1]
+        if dim_equal:
+            n = self.dyn.A.shape[0]
+            u_avg = np.array(self.dyn.u_max + self.dyn.u_min)/2
+            u_avg = u_avg.T
+            u = np.tile(u_avg, (n, 1)) + np.diag((self.dyn.u_max.T - u_avg)[0])
+
+            origin = self.A_pinv @ (self.dyn.B @ np.array(u_avg).T)
+
+            basis_vectors = np.zeros((n,n))
+            for i, elem in enumerate(u):
+                point = self.A_pinv @ (self.dyn.B @ np.expand_dims(elem,1))
+                basis_vectors[i,:] = point.flatten() - origin.flatten()
+
+            parallelo2cube = np.linalg.inv(basis_vectors)
+            x_inv_area_normalised = x_inv_area @ parallelo2cube
+            
+            predSet_originShift = -np.average(x_inv_area_normalised, axis=0)
+
+            allRegionVertices = corners_array @ parallelo2cube - predSet_originShift
+            # use basis vectors
+        else:
+            x_inv_hull = Delaunay(x_inv_area, qhull_options='QJ')
+            allRegionVertices = corners_array
+        for act in progressbar.progressbar(actions):
+            if dim_equal:
+                A_inv_d = self.A_pinv @ np.array(act)
+                all_vert_normed = (A_inv_d @ parallelo2cube) - allRegionVertices
+
+                ## 
+                poly_reshape = np.reshape(all_vert_normed, (len(self.States),len(self.Corners)*n))
+                enabled_in = np.maximum(np.max(poly_reshape, axis=1), -np.min(poly_reshape, axis=1)) <= 1.0
+                import pdb; pdb.set_trace()
+            else:
+                state_counter = {i: 0 for i in self.States if i not in self.Unsafes}
+                A_inv_d = self.A_pinv @ np.array(act)
+                all_vertices = A_inv_d - corners_array
+                in_hull = x_inv_hull.find_simplex(all_vertices) >= 0
+                if np.any(in_hull):
+                    for val in corners_array[in_hull]:
+                        for state in self.Corners_to_states[tuple(val)]:
+                            if state not in self.Unsafes:
+                                state_counter[state]+=1
+                                if state_counter[state] == 2**self.N_d:
+                                    actions[act].append(state)
         return actions
 
     def find_unsafes(self):
         """
-        Finds all iMDP states that overlap with unsafe regions
-        Will expand unsafe regions somewhat
-        (also assumes everything is rectangular)
+        Finds all iMDP states that have a centre in unsafe region
         """
-        unsafes = [state for state in self.States if self.check_unsafe(state)]
+        unsafes = [state for state in self.States if not self.ss.check_safe(state)]
         return unsafes
 
-    def check_unsafe(self, state):
+    def check_unsafe(self, state): # this is gonna be a probem
         overlap = True
         for i in range(self.N_d):
             for unsafe in self.ss.unsafes:
@@ -151,12 +182,9 @@ class iMDP:
 
     def find_goals(self):
         """
-        finds all iMDP states which are fully enclosed in the goal region
-        This effectively shrinks the goal region but should be fine
-        (also assumes everything is rectangular)
+        checks if centre of state is a goal region
         """
-        goals = [state for state in self.States if self.ss.check_goal(state)
-                and self.ss.check_goal(state+self.part_size)]
+        goals = [state for state in self.States if self.ss.check_goal(state)]
         return goals
 
     def backward_states(self, curr):
@@ -212,7 +240,7 @@ class PRISM_writer:
                     "\tk : [0..Nhor]; \n",
                     "\tx : [-1..regions]; \n\n",
                     ]
-        self.write_file(header+variable_defs)
+        self.write_file(header+variable_defs, self.filename)
         
         for k in range(0, N, model.dyn.grouped_timesteps):
 
@@ -223,31 +251,105 @@ class PRISM_writer:
 
             action_defs += ["\t// Delta="+str(model.dyn.grouped_timesteps) + "\n"]
 
-            bool_cont = k % self.dyn.grouped_timesteps == 0
+            bool_cont = k % model.dyn.grouped_timesteps == 0
 
-            if (k + self.dyn.grouped_timesteps <= N and bool_cont) or horizon == 'infinite':
+            if (k + model.dyn.grouped_timesteps <= N and bool_cont) or horizon == 'infinite':
 
-                for a in range(len(model.Actions)):
-                    actionLabel = "[a_"+str(a)+"_d_"+str(model.dyn.grouped_timesteps)+"]"
+                for a_num, a in enumerate(model.Actions):
+                    actionLabel = "[a_"+str(a_num)+"_d_"+str(model.dyn.grouped_timesteps)+"]"
                     enabledIn = model.Actions[a]
 
                     if len(enabledIn) > 0:
-                        guardPieces = ["x="+str(i) for i in enabledIn]
+                        guardPieces = ["x="+str(i) for i, _ in enumerate(enabledIn)]
                         sep = " | "
                     
-                    if horizon == "infinite":
-                        guard = sep.join(guardPieces)
-                        kprime = ""
-                    else:
-                        guardStates = sep.join(guardPieces)
-                        guard = "k="+str(int(k/model.dyn.grouped_timesteps)) + " & ("+guardStates+")"
-                        kprime = "&(k'=k+"+str(1)) + ")"
+                        if horizon == "infinite":
+                            guard = sep.join(guardPieces)
+                            kprime = ""
+                        else:
+                            guardStates = sep.join(guardPieces)
+                            guard = "k="+str(int(k/model.dyn.grouped_timesteps)) + " & ("+guardStates+")"
+                            kprime = "&(k'=k+"+str(1) + ")"
 
-                    if mode == "interval":
-                        interval_idxs = 
+                        if mode == "interval":
+                            interval_idxs = [str(i) for i, state in enumerate(model.States)] + ["-1"]
+                            interval_strings = ["[" + str(prob[0])
+                                                +","+str(prob[1])+"]" for prob in model.trans_probs[a]]
+                            succPieces = [intv +" : (x'="+str(i)+")"+kprime
+                                          for (i,intv) in zip(interval_idxs, interval_strings)]
+                        else:
+                            raise NotImplementedError
+
+                        sep = " + "
+                        successors = sep.join(succPieces)
+
+                        action_defs += "\t"+actionLabel+" " + guard + \
+                                       " -> " + successors + "; \n"
+            
+            action_defs += ["\n\n"]
+            self.write_file(action_defs, self.filename, "a")
+        
+        if horizon == "infinite":
+            footer = [
+                "endmodule \n\n",
+                "init x > -1 endinit \n\n"
+                ]
+        else:
+            footer = [
+                "endmodule \n\n",
+                "init k=0 endinit \n\n"
+                ]
+
+        labelPieces = ["(x="+str(x)+")" for x in model.Goals]
+        sep = "|"
+        labelGuard = sep.join(labelPieces)
+        labels = [
+            "// Labels \n",
+            "label \"reached\" = " + labelGuard+"; \n"
+            ]
+
+        self.write_file(footer + labels, self.filename, "a")
+
+        self.specfile, self.specification = self.writePRISM_specification(mode, horizon, N, model)
+
+        print("Succesfully exported PRISM file")
+
+    def writePRISM_specification(self, mode, horizon, N, model):
+
+        if horizon == "infinite":
+            horizonLen = int(N/model.dyn.grouped_timesteps)
+            if mode == "estimate":
+                specification = "Pmax=? [ F<="+str(horizonLen)+' "reached" ]'
+            else:
+                specification = "Pmaxmin=? [ F<="+str(horizonLen)+' "reached" ]'
+        else:
+            if mode == "estimate":
+                specification = 'Pmax=? [ F "reached" ]'
+            else:
+                specification = 'Pmaxmin=? [ F "reached" ]'
+        specfile = "ScenAbs_" + type(model.dyn).__name__ + "_" + mode + "_" + horizon + ".pctl"
+        self.write_file(specification, specfile)
+
+        return specfile, specification
+
     
 
-    def write_file(self, content, mode="w"):
-        filehandle = open(self.filename, mode)
-        filehandle.writeLines(content)
+    def write_file(self, content, filename, mode="w"):
+        filehandle = open(filename, mode)
+        filehandle.writelines(content)
         filehandle.close()
+
+def solve_PRISM(prism_file, spec, java_memory=24, prism_folder="~/Downloads/prism-imc/prism"):
+    import subprocess
+    file_prefix = "PRISM_out"
+    policy_file = file_prefix + "_policy.csv"
+    vector_file = file_prefix + "_vector.csv"
+    options = ' -ex -exportadv "'+policy_file+'"' + \
+              ' -exportvector "'+vector_file+'"'
+
+    model_file = '"'+prism_file+'"'
+    command = prism_folder + "/bin/prism -javamaxmem " + \
+              str(java_memory) + "g "+model_file+" -pf '"+spec+"' "+options
+    subprocess.Popen(command, shell=True).wait()
+
+    return policy_file, vector_file

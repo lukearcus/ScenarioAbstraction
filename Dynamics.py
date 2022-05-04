@@ -2,9 +2,9 @@ import numpy as np
 
 class dynamic_base:
 
+    grouped_timesteps = 1
     def __init__(self, init_state):
         self.state = init_state
-        self.grouped_timesteps = 1
 
     def state_update(self):
         # update state
@@ -64,8 +64,8 @@ class Drone_base(dynamic_base):
         return 0
 
 class Full_Drone_Base(Drone_base):
+    grouped_timesteps = 2
     def __init__(self, init_state, T, max_acc = float('inf'), min_acc = -float('inf')):
-        self.grouped_timesteps = 2
         self.state = init_state
         self.T = T
         self.crashed = False

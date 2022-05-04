@@ -106,7 +106,7 @@ class ContStateSpace:
                     g.append(self.min_max_to_3d_points(goal, chosen_dims))
                     colours.append("green")
                 cubes = Poly3DCollection(np.concatenate(g),
-                            facecolors=np.repeat(colours,6))
+                            facecolors=np.repeat(colours,6), alpha=0.75)
                 ax.add_collection3d(cubes)
                 return ax
 
