@@ -42,11 +42,12 @@ class iMDP:
         self.States = list(itertools.product(*state_increments))
         self.Corners_to_states = {corner: [] for corner in self.Corners}
         corners = np.array(self.Corners).T
-
+        all_corners = [[] for state in self.States]
         for state in progressbar.progressbar(self.States):
-            adj_corners = np.where(np.all((corners - np.expand_dims(np.array(state),1)) <= np.expand_dims(self.part_size*0.55,1)))[0]
-            for adj_corner in adj_corners:
-                self.Corners_to_states[self.Corners[adj_corner]].append(state)
+            adj_corners = np.where(np.all(np.abs(corners - np.expand_dims(state,1)) <= np.expand_dims(self.part_size*0.55,1),0))[0]
+            all_corners[self.States.index(state)] = corners.T[adj_corners]
+                #self.Corners_to_states[corner_vec].append(state)
+        self.corner_array = np.array(all_corners)
         self.Goals = self.find_goals()
         self.Unsafes = self.find_unsafes()
 
@@ -108,6 +109,9 @@ class iMDP:
                 return self.States.index(state)
         return len(self.States)
 
+    def corner_to_state(self, corner):
+        np.where()
+
     def determine_actions(self):
         
         u = [[self.dyn.u_min[i], self.dyn.u_max[i]] for i in range(len(self.dyn.u_max))]
@@ -115,7 +119,7 @@ class iMDP:
         for i, u_elem in enumerate(itertools.product(*u)):
             list_elem = list(u_elem)
             x_inv_area[i,:] = (self.A_pinv @ (self.dyn.B @ np.array(list_elem))).flatten()
-        corners_array = np.array(self.Corners)
+        corners_array = np.reshape(self.corner_array, (-1, 6))
 
         actions = {i : [] for i in self.States if i not in self.Unsafes}
         dim_equal = self.dyn.A.shape[0] == self.dyn.B.shape[1]
@@ -148,9 +152,8 @@ class iMDP:
                 all_vert_normed = (A_inv_d @ parallelo2cube) - allRegionVertices
 
                 ## 
-                poly_reshape = np.reshape(all_vert_normed, (len(self.States),len(self.Corners)*n))
+                poly_reshape = np.reshape(all_vert_normed, (len(self.States),n*(2**n)))
                 enabled_in = np.maximum(np.max(poly_reshape, axis=1), -np.min(poly_reshape, axis=1)) <= 1.0
-                import pdb; pdb.set_trace()
             else:
                 state_counter = {i: 0 for i in self.States if i not in self.Unsafes}
                 A_inv_d = self.A_pinv @ np.array(act)
@@ -163,6 +166,8 @@ class iMDP:
                                 state_counter[state]+=1
                                 if state_counter[state] == 2**self.N_d:
                                     actions[act].append(state)
+            state_ids = np.where(enabled_in)[0]
+            actions[act] = [self.States[state_id] for state_id in state_ids if self.States[state_id] not in self.Unsafes]
         return actions
 
     def find_unsafes(self):

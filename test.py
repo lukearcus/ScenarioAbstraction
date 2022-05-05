@@ -41,7 +41,7 @@ ss = StateSpace.ContStateSpace(6, ((-15, -9, 5) + tuple(-2.25 for i in range(3))
 ax = ss.draw_space([0,1,2])
 #with open('test_imdp.pkl', 'rb') as inp:
 #    test_imdp = pickle.load(inp)
-test_imdp = iMDP.iMDP(ss, test, (15,3,9,3,7,3), 100)
+test_imdp = iMDP.iMDP(ss, test, (15,9,7,3,3,3), 100)
 
 with open('test_imdp.pkl', 'wb') as outp:
     pickle.dump(test_imdp, outp, pickle.HIGHEST_PROTOCOL)
