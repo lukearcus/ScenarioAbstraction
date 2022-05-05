@@ -27,6 +27,7 @@ class iMDP:
         self.part_size = (Cont_state_space.valid_range[1]-Cont_state_space.valid_range[0])/parts
         corner_increments = []
         state_increments = []
+        print("Settiing up iMDP states")
         for dim in range(self.N_d):
             dim_inc = []
             state_inc = []
@@ -65,7 +66,8 @@ class iMDP:
         Enumerates over actions to find the probability of arriving in the goal state associated with that action
         """
         probs = dict()
-        for i, action in enumerate(self.Actions):
+        print("Finding transition probabilities")
+        for i, action in progressbar.progressbar(enumerate(self.Actions)):
             if i % 10 == 0:
                 print(i/len(self.Actions))
             if len(self.Actions[action]) > 0:
@@ -113,7 +115,7 @@ class iMDP:
         np.where()
 
     def determine_actions(self):
-        
+        print("Determining actions")
         u = [[self.dyn.u_min[i], self.dyn.u_max[i]] for i in range(len(self.dyn.u_max))]
         x_inv_area = np.zeros((2**len(self.dyn.u_max), self.dyn.A.shape[0]))
         for i, u_elem in enumerate(itertools.product(*u)):
