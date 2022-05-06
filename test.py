@@ -42,10 +42,10 @@ ax = ss.draw_space([0,1,2])
 #with open('test_imdp.pkl', 'rb') as inp:
 #    test_imdp = pickle.load(inp)
 test_imdp = iMDP.iMDP(ss, test, (15,9,7,3,3,3), 100)
-
-with open('test_imdp.pkl', 'wb') as outp:
-    pickle.dump(test_imdp, outp, pickle.HIGHEST_PROTOCOL)
-
+#test_imdp.create_probs(100)
+#with open('test_imdp.pkl', 'wb') as outp:
+#    pickle.dump(test_imdp, outp, pickle.HIGHEST_PROTOCOL)
+import pdb; pdb.set_trace()
 writer = iMDP.PRISM_writer(test_imdp, 64)
 iMDP.solve_PRISM(writer.filename, writer.specification)
 #cntrl = controller.controller(test_imdp, test)
