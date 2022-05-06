@@ -2,7 +2,9 @@ import numpy as np
 import itertools
 from scipy.stats import beta
 from scipy.spatial import Delaunay
-import progressbar
+from multiprocessing import Pool
+from tqdm import tqdm
+from functools import partial
 
 class iMDP:
     """
@@ -25,9 +27,25 @@ class iMDP:
         self.dyn = Dynamics
         min_pos = Cont_state_space.valid_range[0]
         self.part_size = (Cont_state_space.valid_range[1]-Cont_state_space.valid_range[0])/parts
+        
+        self.States, self.corner_array = self.create_partition(min_pos, parts)
+        self.Goals = self.find_goals()
+        self.Unsafes = self.find_unsafes()
+        
+        self.A_pinv = np.linalg.pinv(self.dyn.A)
+        self.B_pinv = np.linalg.pinv(self.dyn.B_full_rank) 
+        
+        np_incs = np.stack(([0 for i in range(self.N_d)],self.part_size)).T
+        
+        self.Actions = self.determine_actions()
+        self.trans_probs = self.determine_probs(num_samples)
+    def create_probs(self, N):
+        self.trans_probs = self.determine_probs(N) # delete this func later
+
+    def create_partition(self, min_pos, parts):
         corner_increments = []
         state_increments = []
-        print("Settiing up iMDP states")
+        print("Setting up iMDP states")
         for dim in range(self.N_d):
             dim_inc = []
             state_inc = []
@@ -39,27 +57,15 @@ class iMDP:
             dim_inc.append(curr_inc)
             corner_increments.append(dim_inc)
             state_increments.append(state_inc)
-        self.Corners = list(itertools.product(*corner_increments))
-        self.States = list(itertools.product(*state_increments))
-        self.Corners_to_states = {corner: [] for corner in self.Corners}
-        corners = np.array(self.Corners).T
-        all_corners = [[] for state in self.States]
-        for state in progressbar.progressbar(self.States):
+        corners = np.array(list(itertools.product(*corner_increments))).T
+        states = list(itertools.product(*state_increments))
+        all_corners = [[] for state in states]
+        for state in tqdm(states):
             adj_corners = np.where(np.all(np.abs(corners - np.expand_dims(state,1)) <= np.expand_dims(self.part_size*0.55,1),0))[0]
-            all_corners[self.States.index(state)] = corners.T[adj_corners]
-                #self.Corners_to_states[corner_vec].append(state)
-        self.corner_array = np.array(all_corners)
-        self.Goals = self.find_goals()
-        self.Unsafes = self.find_unsafes()
+            all_corners[states.index(state)] = corners.T[adj_corners]
+        corner_array = np.array(all_corners)
 
-        self.A_pinv = np.linalg.pinv(self.dyn.A)
-
-        self.B_pinv = np.linalg.pinv(self.dyn.B_full_rank) 
-        np_incs = np.stack(([0 for i in range(self.N_d)],self.part_size)).T
-        incs = [list(inc) for inc in np_incs]
-        self.edge_diffs = list(itertools.product(*incs))
-        self.Actions = self.determine_actions()
-        self.trans_probs = self.determine_probs(num_samples)
+        return states, corner_array
 
     def create_table(self, N):
         print("Building lookup table")
@@ -82,14 +88,17 @@ class iMDP:
         Enumerates over actions to find the probability of arriving in the goal state associated with that action
         """
         probs = dict()
-        lookup_table = self.create_table(N)
+        self.lookup_table = self.create_table(N)
         print("Finding transition probabilities")
-        for i, action in progressbar.progressbar(enumerate(self.Actions)):
-            if len(self.Actions[action]) > 0:
-                probs[action] = self.comp_bounds(action, N, lookup_table)
+        with Pool() as p:
+            results = tqdm(p.imap(partial(self.comp_bounds, N=N), self.Actions), total=len(self.Actions))
+            probs = list(tuple(results))
+        #for action in progressbar.progressbar(self.Actions):
+        #    if len(self.Actions[action]) > 0:
+        #        probs[action] = self.comp_bounds(action, N, lookup_table)
         return probs
 
-    def comp_bounds(self, action, N, table):
+    def comp_bounds(self, action, N):
         """
         compute probability bounds by adding noise to goal position and checking the resulting state
         """
@@ -100,18 +109,19 @@ class iMDP:
         for i in range(N):
             self.dyn.state = np.expand_dims(pos,1)
             next_cont_state = np.expand_dims(pos,1) + self.dyn.noise() # change this
-            next_ind = self.find_state_index(next_cont_state.T)
+            next_ind = self.find_state_index(next_cont_state.T) # this is the slow bit, speed it up by looking through all points at the end
+            #print(toc-tic, "_____", tac-toc)
             N_in[next_ind] += 1
         self.dyn.state = init
-        return self.samples_to_prob(N, N_in, table)
+        return self.samples_to_prob(N, N_in)
 
-    def samples_to_prob(self, N, N_in, lookup_table):
+    def samples_to_prob(self, N, N_in):
         probs = [[0,1] for state in self.States]
         probs.append([0,1])
         for j, N_in_j in enumerate(N_in):
             k = N-N_in_j
-            probs[j][0] = lookup_table[k,0]
-            probs[j][1] = lookup_table[k,1]
+            probs[j][0] = self.lookup_table[k,0]
+            probs[j][1] = self.lookup_table[k,1]
             #if k == N:
             #    probs[j][0] = 0
             #    probs[j][1] = 1- beta.ppf(beta_bar, N-1, 1)
@@ -139,10 +149,16 @@ class iMDP:
         return probs
 
     def find_state_index(self, x):
-        for state in self.States:
-            if np.all(x > state - self.part_size/2) and np.all(x < state + self.part_size/2):
-                return self.States.index(state)
-        return len(self.States)
+        state_ind = np.where(np.all(self.corner_array >= x, 2)[:, -1] *
+                             np.all(self.corner_array <= x, 2)[:, 0])[0]
+        if state_ind.shape[0] > 0:
+            return np.random.choice(state_ind)
+        else:
+            return len(self.States)
+        #for state in self.States:
+        #    if np.all(x >= state - self.part_size/2) and np.all(x <= state + self.part_size/2):
+        #        return self.States.index(state)
+        #return len(self.States)
 
     def corner_to_state(self, corner):
         np.where()
@@ -181,7 +197,7 @@ class iMDP:
         else:
             x_inv_hull = Delaunay(x_inv_area, qhull_options='QJ')
             allRegionVertices = corners_array
-        for act in progressbar.progressbar(actions):
+        for act in tqdm(actions):
             if dim_equal:
                 A_inv_d = self.A_pinv @ np.array(act)
                 all_vert_normed = (A_inv_d @ parallelo2cube) - allRegionVertices
