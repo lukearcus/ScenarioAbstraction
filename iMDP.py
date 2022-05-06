@@ -61,20 +61,35 @@ class iMDP:
         self.Actions = self.determine_actions()
         self.trans_probs = self.determine_probs(num_samples)
 
+    def create_table(self, N):
+        print("Building lookup table")
+        beta_bar = self.beta/(2*N)
+        table = np.zeros((N+1, 2))
+        table[N,0] = 0
+        table[N,1] = 1-beta.ppf(beta_bar, N-1, 1)
+        for k in progressbar.progressbar(range(N)):
+                id_in = (k-1) // 2
+                table[k,0] = 1 - beta.ppf(1-beta_bar, id_in+1, N-k)
+                if k == 0:
+                    table[k,1] = 1
+                else:
+                    id_out = id_in + 1
+                    table[k,1] = 1 - beta.ppf(beta_bar, id_out+1, N-k) 
+        return table
+
     def determine_probs(self, N):
         """
         Enumerates over actions to find the probability of arriving in the goal state associated with that action
         """
         probs = dict()
+        lookup_table = self.create_table(N)
         print("Finding transition probabilities")
         for i, action in progressbar.progressbar(enumerate(self.Actions)):
-            if i % 10 == 0:
-                print(i/len(self.Actions))
             if len(self.Actions[action]) > 0:
-                probs[action] = self.comp_bounds(action, N)
+                probs[action] = self.comp_bounds(action, N, lookup_table)
         return probs
 
-    def comp_bounds(self, action, N):
+    def comp_bounds(self, action, N, table):
         """
         compute probability bounds by adding noise to goal position and checking the resulting state
         """
@@ -84,25 +99,43 @@ class iMDP:
         N_in.append(0)
         for i in range(N):
             self.dyn.state = np.expand_dims(pos,1)
-            next_cont_state = np.expand_dims(pos,1) + self.dyn.noise()
+            next_cont_state = np.expand_dims(pos,1) + self.dyn.noise() # change this
             next_ind = self.find_state_index(next_cont_state.T)
             N_in[next_ind] += 1
         self.dyn.state = init
-        return self.samples_to_prob(N, N_in)
+        return self.samples_to_prob(N, N_in, table)
 
-    def samples_to_prob(self, N, N_in):
-        beta_bar = self.beta/(2*N)
+    def samples_to_prob(self, N, N_in, lookup_table):
         probs = [[0,1] for state in self.States]
         probs.append([0,1])
         for j, N_in_j in enumerate(N_in):
-            if N_in_j < N:
-                if N_in_j == 0:
-                    probs[j][0] = 0
-                else:
-                    probs[j][0] = beta.ppf(beta_bar, N_in_j + 1, N-(N_in_j+1)+1) # should precompute these
-                probs[j][1] = beta.ppf(1-beta_bar, N_in_j+1, N-(N_in_j+1)+1)
-            else:
-                probs[j][0] = 1
+            k = N-N_in_j
+            probs[j][0] = lookup_table[k,0]
+            probs[j][1] = lookup_table[k,1]
+            #if k == N:
+            #    probs[j][0] = 0
+            #    probs[j][1] = 1- beta.ppf(beta_bar, N-1, 1)
+            #else:
+            #    id_in = (k-1) // 2
+            #    probs[j][0] = 1 - beta.ppf(1-beta_bar, id_in+1, N_in_j)
+            #    if k == 0:
+            #        probs[j][1] = 1
+            #    else:
+            #        id_out = id_in + 1
+            #        probs[j][1] = 1 - beta.ppf(beta_bar, id_out+1, N_in_j) 
+            if j == len(N_in) - 1:
+                low = probs[j][0]
+                upp = probs[j][1]
+                probs[j][0] = 1 - upp
+                probs[j][1] = 1 - low
+            #if N_in_j < N:
+            #    if N_in_j == 0:
+            #        probs[j][0] = 0
+            #    else:
+            #        probs[j][0] = beta.ppf(beta_bar, N_in_j + 1, N-(N_in_j+1)+1) # should precompute these
+            #    probs[j][1] = beta.ppf(1-beta_bar, N_in_j+1, N-(N_in_j+1)+1)
+            #else:
+            #    probs[j][0] = 1
         return probs
 
     def find_state_index(self, x):
