@@ -28,19 +28,23 @@ class iMDP:
         min_pos = Cont_state_space.valid_range[0]
         self.part_size = (Cont_state_space.valid_range[1]-Cont_state_space.valid_range[0])/parts
         
-        self.States, self.corner_array = self.create_partition(min_pos, parts)
+        self.States, self.corner_array, self.corners_flat = self.create_partition(min_pos, parts)
         self.Goals = self.find_goals()
         self.Unsafes = self.find_unsafes()
-        
+        self.end_corners_flat = np.reshape(self.corner_array[:,[0,-1],:],(-1,self.N_d))
+        import pdb; pdb.set_trace()
         self.A_pinv = np.linalg.pinv(self.dyn.A)
         self.B_pinv = np.linalg.pinv(self.dyn.B_full_rank) 
         
         np_incs = np.stack(([0 for i in range(self.N_d)],self.part_size)).T
-        
         self.Actions = self.determine_actions()
         self.trans_probs = self.determine_probs(num_samples)
-    def create_probs(self, N):
-        self.trans_probs = self.determine_probs(N) # delete this func later
+
+   # def create_probs(self, N):
+   #    """
+   #    function for adding new samples/ changing probabilities
+   #    """
+   #    self.trans_probs = self.determine_probs(N)
 
     def create_partition(self, min_pos, parts):
         corner_increments = []
@@ -64,8 +68,8 @@ class iMDP:
             adj_corners = np.where(np.all(np.abs(corners - np.expand_dims(state,1)) <= np.expand_dims(self.part_size*0.55,1),0))[0]
             all_corners[states.index(state)] = corners.T[adj_corners]
         corner_array = np.array(all_corners)
-
-        return states, corner_array
+        corners_flat = np.reshape(corner_array, (-1, N_d))
+        return states, corner_array, corners_flat
 
     def create_table(self, N):
         print("Building lookup table")
@@ -87,33 +91,46 @@ class iMDP:
         """
         Enumerates over actions to find the probability of arriving in the goal state associated with that action
         """
-        probs = dict()
         self.lookup_table = self.create_table(N)
         print("Finding transition probabilities")
-        with Pool() as p:
-            results = tqdm(p.imap(partial(self.comp_bounds, N=N), self.Actions), total=len(self.Actions))
-            probs = list(tuple(results))
-        #for action in progressbar.progressbar(self.Actions):
-        #    if len(self.Actions[action]) > 0:
-        #        probs[action] = self.comp_bounds(action, N, lookup_table)
+        enabled_actions = [act for act in self.Actions if len(self.Actions[act]) > 0]
+        #with Pool() as p:
+        #    results = tqdm(p.imap(partial(self.comp_bounds, N=N), enabled_actions), total=len(self.Actions))
+        #    probs = list(tuple(results))
+        probs = {act:[] for act in enabled_actions}
+        for action in tqdm(enabled_actions):
+            probs[action] = self.comp_bounds(action, N)
         return probs
 
     def comp_bounds(self, action, N):
         """
         compute probability bounds by adding noise to goal position and checking the resulting state
         """
+        import time
         init = self.dyn.state
         pos = action
-        N_in = [0 for state in self.States]
-        N_in.append(0)
-        for i in range(N):
-            self.dyn.state = np.expand_dims(pos,1)
-            next_cont_state = np.expand_dims(pos,1) + self.dyn.noise() # change this
-            next_ind = self.find_state_index(next_cont_state.T) # this is the slow bit, speed it up by looking through all points at the end
-            #print(toc-tic, "_____", tac-toc)
-            N_in[next_ind] += 1
+        tic = time.perf_counter()
+        resulting_states = self.add_noise(action, N)
+        toc = time.perf_counter()
+        inds = self.find_state_index(resulting_states) # this still needs to be faster...
+        N_in = [inds.count(i) for i in range(len(self.States)+1)]
+        tac = time.perf_counter()
+        print(toc-tic, "____", tac-toc)
         self.dyn.state = init
         return self.samples_to_prob(N, N_in)
+
+    def add_noise(self, action, N):
+        p = len(action)
+        if hasattr(self.dyn, 'mu'):
+            resulting_states = np.tile(np.expand_dims(action,1),(1,N)).T +\
+                               np.random.normal(self.dyn.mu, self.dyn.sigma, (N,p))
+        else:
+            resulting_states = np.zeros((N,p))
+            self.dyn.state = np.expand_dims(pos,1)
+            for i in range(N):
+                resulting_states[i,:] = (np.expand_dims(pos,1) + self.dyn.noise()).T
+
+        return resulting_states
 
     def samples_to_prob(self, N, N_in):
         probs = [[0,1] for state in self.States]
@@ -149,12 +166,27 @@ class iMDP:
         return probs
 
     def find_state_index(self, x):
-        state_ind = np.where(np.all(self.corner_array >= x, 2)[:, -1] *
-                             np.all(self.corner_array <= x, 2)[:, 0])[0]
-        if state_ind.shape[0] > 0:
-            return np.random.choice(state_ind)
+        if len(x.shape) < 2:
+            test_pos = x[np.newaxis, np.newaxis, :]
+            num_ins = 1
         else:
-            return len(self.States)
+            test_pos = x[:, np.newaxis, :]
+            num_ins = x.shape[0]
+        shape =  (num_ins,-1,self.corner_array.shape[0],self.corner_array.shape[2])
+
+        signs = np.sign(self.end_corners_flat - test_pos)
+        signs_reshaped = np.reshape(signs,shape)
+        signs.max(2)*signs.min(2)
+
+        lower = np.reshape(np.all(self.corners_flat <= test_pos, 2),shape)[:,:,0]
+        upper = np.reshape(np.all(self.corners_flat >= test_pos, 2),shape)[:,:,-1]
+        states = upper * lower
+        # might be able to just check >= and should be last state
+        return [np.where(states[i,:])[0][0] if np.any(states[i,:]) else len(self.States) for i in range(num_ins) ]
+        #if state_ind.shape[0] > 0:
+        #    return np.random.choice(state_ind)
+        #else:
+        #    return len(self.States)
         #for state in self.States:
         #    if np.all(x >= state - self.part_size/2) and np.all(x <= state + self.part_size/2):
         #        return self.States.index(state)
@@ -170,7 +202,7 @@ class iMDP:
         for i, u_elem in enumerate(itertools.product(*u)):
             list_elem = list(u_elem)
             x_inv_area[i,:] = (self.A_pinv @ (self.dyn.B @ np.array(list_elem))).flatten()
-        corners_array = np.reshape(self.corner_array, (-1, 6))
+        corners_array = self.corners_flat
 
         actions = {i : [] for i in self.States if i not in self.Unsafes}
         dim_equal = self.dyn.A.shape[0] == self.dyn.B.shape[1]
@@ -409,3 +441,4 @@ def solve_PRISM(prism_file, spec, java_memory=24, prism_folder="~/Downloads/pris
     subprocess.Popen(command, shell=True).wait()
 
     return policy_file, vector_file
+import progressbar

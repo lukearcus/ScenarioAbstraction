@@ -9,10 +9,12 @@ import controller
 import pickle
 
 init_pos = np.ones((3,1))*1
+init_pos[2] = 6
 init_vel = np.zeros((3,1))
 init = np.concatenate((init_pos,init_vel))
 T=1
-test = Dynamics.Full_Drone_dryden(init, T, 4, -4, 5)
+#test = Dynamics.Full_Drone_dryden(init, T, 4, -4, 5)
+test = Dynamics.Full_Drone_gauss(init, T, 4, -4, 0, 0.1)
 control = np.ones((6,1))*1
 
 
@@ -43,8 +45,8 @@ ax = ss.draw_space([0,1,2])
 #    test_imdp = pickle.load(inp)
 test_imdp = iMDP.iMDP(ss, test, (15,9,7,3,3,3), 100)
 #test_imdp.create_probs(100)
-#with open('test_imdp.pkl', 'wb') as outp:
-#    pickle.dump(test_imdp, outp, pickle.HIGHEST_PROTOCOL)
+with open('test_imdp.pkl', 'wb') as outp:
+    pickle.dump(test_imdp, outp, pickle.HIGHEST_PROTOCOL)
 import pdb; pdb.set_trace()
 writer = iMDP.PRISM_writer(test_imdp, 64)
 iMDP.solve_PRISM(writer.filename, writer.specification)
