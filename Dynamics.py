@@ -1,4 +1,5 @@
 import numpy as np
+import BAS_params as BAS_class
 
 class dynamic_base:
 
@@ -12,6 +13,78 @@ class dynamic_base:
 
     def noise(self):
         pass
+
+class heat_1_room(dynamic_base):
+    def __init__(self, init, T=15, min_u = [14, -10], max_u = [28,10]):
+        self.state=init
+        self.T = T
+        self.u_min = np.array([min_u]).T
+        self.u_max = np.array([max_u]).T
+        BAS = BAS_class.parameters()
+
+        Tswb    = BAS.Boiler['Tswbss'] - 20
+        Twss    = BAS.Zone1['Twss']
+        Pout1   = BAS.Radiator['Zone1']['Prad']      
+        
+        w       = BAS.Radiator['w_r']
+        
+        BAS.Zone1['Cz'] = BAS.Zone1['Cz']
+        
+        m1      = BAS.Zone1['m'] # Proportional factor for the air conditioning
+        
+        k1_a    = BAS.Radiator['k1']
+        k0_a    = BAS.Radiator['k0'] #Proportional factor for the boiler temp. on radiator temp.
+        
+        # Defining Deterministic Model corresponding matrices
+        A_cont      = np.zeros((2,2));
+        A_cont[0,0] = -(1/(BAS.Zone1['Rn']*BAS.Zone1['Cz']))-((Pout1*BAS.Radiator['alpha2'] )/(BAS.Zone1['Cz'])) - ((m1*BAS.Materials['air']['Cpa'])/(BAS.Zone1['Cz']))
+        A_cont[0,1] = (Pout1*BAS.Radiator['alpha2'] )/(BAS.Zone1['Cz'])
+        A_cont[1,0] = (k1_a)
+        A_cont[1,1] = -(k0_a*w) - k1_a
+        
+        B_cont      = np.zeros((2,2))
+        B_cont[0,0] = (m1*BAS.Materials['air']['Cpa'])/(BAS.Zone1['Cz'])
+        B_cont[1,1] = (k0_a*w) # < Allows to change the boiler temperature
+
+        
+        W_cont  = np.array([
+                [ (Twss/(BAS.Zone1['Rn']*BAS.Zone1['Cz']))+ (BAS.Radiator['alpha1'])/(BAS.Zone1['Cz']) ],
+                [ (k0_a*w*Tswb) ],
+                ])
+        
+        self.A = np.eye(2) + self.T*A_cont
+        self.B = B_cont*self.T
+        self.Q = W_cont*self.T
+        
+        self.B_full_rank = self.B
+        # Determine system dimensions
+        self.n = np.size(self.A,1)
+        self.p = np.size(self.B,1)
+
+        self.mu = np.array([0,0])
+        self.sigma = np.diag([ BAS.Zone1['Tz']['sigma'], BAS.Radiator['rw']['sigma'] ])
+
+    def is_valid(self, control):
+        split = self.split_control(control)
+        for control in split:
+            if np.any(control > self.u_max) or np.any(control < self.u_min):
+                return False
+        return True
+    
+    def split_control(self, control):
+        in_dims = self.B.shape[1]
+        num_ins = int(control.size/in_dims)
+        return np.split(control, num_ins)
+    
+    def state_update(self, control):
+        split_controls = self.split_control(control)
+        for control in split_controls:
+            if not self.is_valid(control):
+                raise NotImplementedError
+            self.state = self.A @ self.state + self.B @ control + self.Q+ self.noise()
+
+    def noise(self):
+        return np.random.multivariate_normal(self.mu, self.sigma)
 
 class Drone_base(dynamic_base):
 
@@ -31,6 +104,7 @@ class Drone_base(dynamic_base):
                            [T, 0, 0],
                            [0, T, 0],
                            [0, 0, T]])
+        self.Q = np.zeros((6,1))
 
         self.u_max = np.ones((self.B.shape[1],1)) * max_acc
         self.u_min = np.ones((self.B.shape[1],1)) * min_acc

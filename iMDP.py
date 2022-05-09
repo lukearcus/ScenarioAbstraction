@@ -32,7 +32,7 @@ class iMDP:
         self.Goals = self.find_goals()
         self.Unsafes = self.find_unsafes()
         self.end_corners_flat = np.reshape(self.corner_array[:,[0,-1],:],(-1,self.N_d))
-        import pdb; pdb.set_trace()
+        #import pdb; pdb.set_trace()
         self.A_pinv = np.linalg.pinv(self.dyn.A)
         self.B_pinv = np.linalg.pinv(self.dyn.B_full_rank) 
         
@@ -47,7 +47,6 @@ class iMDP:
    #    self.trans_probs = self.determine_probs(N)
 
     def create_partition(self, min_pos, parts):
-        corner_increments = []
         state_increments = []
         print("Setting up iMDP states")
         for dim in range(self.N_d):
@@ -59,16 +58,13 @@ class iMDP:
                 dim_inc.append(curr_inc)
                 curr_inc += self.part_size[dim]
             dim_inc.append(curr_inc)
-            corner_increments.append(dim_inc)
             state_increments.append(state_inc)
-        corners = np.array(list(itertools.product(*corner_increments))).T
         states = list(itertools.product(*state_increments))
-        all_corners = [[] for state in states]
-        for state in tqdm(states):
-            adj_corners = np.where(np.all(np.abs(corners - np.expand_dims(state,1)) <= np.expand_dims(self.part_size*0.55,1),0))[0]
-            all_corners[states.index(state)] = corners.T[adj_corners]
-        corner_array = np.array(all_corners)
-        corners_flat = np.reshape(corner_array, (-1, N_d))
+
+        part_incs = [[-part_size/2, part_size/2] for part_size in self.part_size]
+        part_arr = np.array(list(itertools.product(*part_incs)))
+        corner_array = np.array(states)[:, np.newaxis, :] + part_arr
+        corners_flat = np.reshape(corner_array, (-1, self.N_d))
         return states, corner_array, corners_flat
 
     def create_table(self, N):
@@ -76,15 +72,15 @@ class iMDP:
         beta_bar = self.beta/(2*N)
         table = np.zeros((N+1, 2))
         table[N,0] = 0
-        table[N,1] = 1-beta.ppf(beta_bar, N-1, 1)
+        table[N,1] = round(1-beta.ppf(beta_bar, N-1, 1),5)
         for k in progressbar.progressbar(range(N)):
                 id_in = (k-1) // 2
-                table[k,0] = 1 - beta.ppf(1-beta_bar, id_in+1, N-k)
+                table[k,0] = round(1 - beta.ppf(1-beta_bar, id_in+1, N-k),5)
                 if k == 0:
                     table[k,1] = 1
                 else:
                     id_out = id_in + 1
-                    table[k,1] = 1 - beta.ppf(beta_bar, id_out+1, N-k) 
+                    table[k,1] = round(1 - beta.ppf(beta_bar, id_out+1, N-k), 5 )
         return table
 
     def determine_probs(self, N):
@@ -106,16 +102,17 @@ class iMDP:
         """
         compute probability bounds by adding noise to goal position and checking the resulting state
         """
-        import time
+        actions = {i : [] for i in self.States if i not in self.Unsafes}
+        #import time
         init = self.dyn.state
         pos = action
-        tic = time.perf_counter()
+        #tic = time.perf_counter()
         resulting_states = self.add_noise(action, N)
-        toc = time.perf_counter()
+        #toc = time.perf_counter()
         inds = self.find_state_index(resulting_states) # this still needs to be faster...
         N_in = [inds.count(i) for i in range(len(self.States)+1)]
-        tac = time.perf_counter()
-        print(toc-tic, "____", tac-toc)
+        #tac = time.perf_counter()
+        #print(toc-tic, "____", tac-toc)
         self.dyn.state = init
         return self.samples_to_prob(N, N_in)
 
@@ -123,7 +120,7 @@ class iMDP:
         p = len(action)
         if hasattr(self.dyn, 'mu'):
             resulting_states = np.tile(np.expand_dims(action,1),(1,N)).T +\
-                               np.random.normal(self.dyn.mu, self.dyn.sigma, (N,p))
+                               np.random.multivariate_normal(self.dyn.mu, self.dyn.sigma, (N))
         else:
             resulting_states = np.zeros((N,p))
             self.dyn.state = np.expand_dims(pos,1)
@@ -172,17 +169,14 @@ class iMDP:
         else:
             test_pos = x[:, np.newaxis, :]
             num_ins = x.shape[0]
-        shape =  (num_ins,-1,self.corner_array.shape[0],self.corner_array.shape[2])
-
+        shape =  (num_ins,self.corner_array.shape[0],2,self.corner_array.shape[2])
         signs = np.sign(self.end_corners_flat - test_pos)
-        signs_reshaped = np.reshape(signs,shape)
-        signs.max(2)*signs.min(2)
+        reshaped = signs.reshape(shape)
+        summed = reshaped.sum(2)
+        abs_sum = np.abs(summed).sum(2)
 
-        lower = np.reshape(np.all(self.corners_flat <= test_pos, 2),shape)[:,:,0]
-        upper = np.reshape(np.all(self.corners_flat >= test_pos, 2),shape)[:,:,-1]
-        states = upper * lower
         # might be able to just check >= and should be last state
-        return [np.where(states[i,:])[0][0] if np.any(states[i,:]) else len(self.States) for i in range(num_ins) ]
+        return [np.where(abs_sum[i,:]==0)[0][0] if not np.all(abs_sum[i,:]) else len(self.States) for i in range(num_ins) ]
         #if state_ind.shape[0] > 0:
         #    return np.random.choice(state_ind)
         #else:
@@ -201,10 +195,9 @@ class iMDP:
         x_inv_area = np.zeros((2**len(self.dyn.u_max), self.dyn.A.shape[0]))
         for i, u_elem in enumerate(itertools.product(*u)):
             list_elem = list(u_elem)
-            x_inv_area[i,:] = (self.A_pinv @ (self.dyn.B @ np.array(list_elem))).flatten()
+            x_inv_area[i,:] = (self.A_pinv @ (self.dyn.B @ np.array(list_elem) + self.dyn.Q)).flatten()
         corners_array = self.corners_flat
 
-        actions = {i : [] for i in self.States if i not in self.Unsafes}
         dim_equal = self.dyn.A.shape[0] == self.dyn.B.shape[1]
         if dim_equal:
             n = self.dyn.A.shape[0]
@@ -229,15 +222,13 @@ class iMDP:
         else:
             x_inv_hull = Delaunay(x_inv_area, qhull_options='QJ')
             allRegionVertices = corners_array
-        for act in tqdm(actions):
-            if dim_equal:
-                A_inv_d = self.A_pinv @ np.array(act)
-                all_vert_normed = (A_inv_d @ parallelo2cube) - allRegionVertices
-
-                ## 
-                poly_reshape = np.reshape(all_vert_normed, (len(self.States),n*(2**n)))
-                enabled_in = np.maximum(np.max(poly_reshape, axis=1), -np.min(poly_reshape, axis=1)) <= 1.0
-            else:
+        if dim_equal:
+            actions = {i : [] for i in self.States if i not in self.Unsafes}
+            for act in tqdm(actions):
+                actions[act] = self.inv_reachable(act, allRegionVertices, parallelo2cube, n)
+        else:
+            actions = {i : [] for i in self.States if i not in self.Unsafes}
+            for act in tqdm(actions):
                 state_counter = {i: 0 for i in self.States if i not in self.Unsafes}
                 A_inv_d = self.A_pinv @ np.array(act)
                 all_vertices = A_inv_d - corners_array
@@ -249,10 +240,20 @@ class iMDP:
                                 state_counter[state]+=1
                                 if state_counter[state] == 2**self.N_d:
                                     actions[act].append(state)
-            state_ids = np.where(enabled_in)[0]
-            actions[act] = [self.States[state_id] for state_id in state_ids if self.States[state_id] not in self.Unsafes]
+                state_ids = np.where(enabled_in)[0]
+                actions[act] = [self.States[state_id] for state_id in state_ids if self.States[state_id] not in self.Unsafes]
         return actions
+    
+    def inv_reachable(self, act, allRegionVertices, parallelo2cube, n):
+        A_inv_d = self.A_pinv @ np.array(act)
+        all_vert_normed = (A_inv_d @ parallelo2cube) - allRegionVertices
 
+        ## 
+        poly_reshape = np.reshape(all_vert_normed, (len(self.States),n*(2**n)))
+        enabled_in = np.maximum(np.max(poly_reshape, axis=1), -np.min(poly_reshape, axis=1)) <= 1.0
+        state_ids = np.where(enabled_in)[0]
+        return [self.States[state_id] for state_id in state_ids if self.States[state_id] not in self.Unsafes]
+    
     def find_unsafes(self):
         """
         Finds all iMDP states that have a centre in unsafe region
@@ -427,7 +428,7 @@ class PRISM_writer:
         filehandle.writelines(content)
         filehandle.close()
 
-def solve_PRISM(prism_file, spec, java_memory=24, prism_folder="~/Downloads/prism-imc/prism"):
+def solve_PRISM(prism_file, spec, java_memory=2, prism_folder="~/Downloads/prism-imc/prism"):
     import subprocess
     file_prefix = "PRISM_out"
     policy_file = file_prefix + "_policy.csv"

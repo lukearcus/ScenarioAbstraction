@@ -87,7 +87,7 @@ class ContStateSpace:
                     size = goal[1] - goal[0]
                     ax.add_patch(Rectangle(goal[0], size[0], size[1], color='g'))
                 
-                plt.xlim(self.valid_range[0][chosen_dims[0]], self.valid_range[1][chsoen_dims[0]])
+                plt.xlim(self.valid_range[0][chosen_dims[0]], self.valid_range[1][chosen_dims[0]])
                 plt.ylim(self.valid_range[0][chosen_dims[1]], self.valid_range[1][chosen_dims[1]])
                 return ax
 
