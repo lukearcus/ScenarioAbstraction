@@ -57,7 +57,6 @@ elif model == "room":
 
     ax = ss.draw_space()
     test_imdp = iMDP.iMDP(ss, test, (19,20), 100)
-import pdb; pdb.set_trace()
 writer = iMDP.PRISM_writer(test_imdp, 64)
 iMDP.solve_PRISM(writer.filename, writer.specification, 12)
 #cntrl = controller.controller(test_imdp, test)

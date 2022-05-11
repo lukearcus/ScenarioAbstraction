@@ -6,6 +6,9 @@ from multiprocessing import Pool
 from tqdm import tqdm
 from functools import partial
 
+def dec_round(num, decimals):
+    return num // 10**-decimals / 10**decimals
+
 class iMDP:
     """
     iMDP maker
@@ -72,15 +75,15 @@ class iMDP:
         beta_bar = self.beta/(2*N)
         table = np.zeros((N+1, 2))
         table[N,0] = 0
-        table[N,1] = round(1-beta.ppf(beta_bar, N-1, 1),5)
+        table[N,1] = 1-beta.ppf(beta_bar, N-1, 1)
         for k in progressbar.progressbar(range(N)):
                 id_in = (k-1) // 2
-                table[k,0] = round(1 - beta.ppf(1-beta_bar, id_in+1, N-k),5)
+                table[k,0] = 1 - beta.ppf(1-beta_bar, id_in+1, N-k)
                 if k == 0:
                     table[k,1] = 1
                 else:
                     id_out = id_in + 1
-                    table[k,1] = round(1 - beta.ppf(beta_bar, id_out+1, N-k), 5 )
+                    table[k,1] = 1 - beta.ppf(beta_bar, id_out+1, N-k)
         return table
 
     def determine_probs(self, N):
@@ -132,34 +135,40 @@ class iMDP:
     def samples_to_prob(self, N, N_in):
         probs = [[0,1] for state in self.States]
         probs.append([0,1])
+        deadlock_lb = 1
         for j, N_in_j in enumerate(N_in):
-            k = N-N_in_j
-            probs[j][0] = self.lookup_table[k,0]
-            probs[j][1] = self.lookup_table[k,1]
-            #if k == N:
-            #    probs[j][0] = 0
-            #    probs[j][1] = 1- beta.ppf(beta_bar, N-1, 1)
-            #else:
-            #    id_in = (k-1) // 2
-            #    probs[j][0] = 1 - beta.ppf(1-beta_bar, id_in+1, N_in_j)
-            #    if k == 0:
-            #        probs[j][1] = 1
-            #    else:
-            #        id_out = id_in + 1
-            #        probs[j][1] = 1 - beta.ppf(beta_bar, id_out+1, N_in_j) 
-            if j == len(N_in) - 1:
-                low = probs[j][0]
-                upp = probs[j][1]
-                probs[j][0] = 1 - upp
-                probs[j][1] = 1 - low
-            #if N_in_j < N:
-            #    if N_in_j == 0:
-            #        probs[j][0] = 0
-            #    else:
-            #        probs[j][0] = beta.ppf(beta_bar, N_in_j + 1, N-(N_in_j+1)+1) # should precompute these
-            #    probs[j][1] = beta.ppf(1-beta_bar, N_in_j+1, N-(N_in_j+1)+1)
-            #else:
-            #    probs[j][0] = 1
+            if N_in_j > 0:
+                k = N-N_in_j
+                probs[j][0] = dec_round(self.lookup_table[k,0],5)
+                probs[j][1] = dec_round(self.lookup_table[k,1],5)
+                deadlock_lb -= probs[j][0]
+                #if k == N:
+                #    probs[j][0] = 0
+                #    probs[j][1] = 1- beta.ppf(beta_bar, N-1, 1)
+                #else:
+                #    id_in = (k-1) // 2
+                #    probs[j][0] = 1 - beta.ppf(1-beta_bar, id_in+1, N_in_j)
+                #    if k == 0:
+                #        probs[j][1] = 1
+                #    else:
+                #        id_out = id_in + 1
+                #        probs[j][1] = 1 - beta.ppf(beta_bar, id_out+1, N_in_j) 
+                if j == len(N_in) - 1:
+                    low = probs[j][0]
+                    upp = probs[j][1]
+                    #probs[j][0] = 1 - upp
+                    probs[j][1] = 1 - low
+                    probs[j][0] = deadlock_lb
+                #if N_in_j < N:
+                #    if N_in_j == 0:
+                #        probs[j][0] = 0
+                #    else:
+                #        probs[j][0] = beta.ppf(beta_bar, N_in_j + 1, N-(N_in_j+1)+1) # should precompute these
+                #    probs[j][1] = beta.ppf(1-beta_bar, N_in_j+1, N-(N_in_j+1)+1)
+                #else:
+                #    probs[j][0] = 1
+            else:
+                probs[j] = -1
         return probs
 
     def find_state_index(self, x):
@@ -361,9 +370,10 @@ class PRISM_writer:
                             kprime = "&(k'=k+"+str(1) + ")"
 
                         if mode == "interval":
-                            interval_idxs = [str(i) for i, state in enumerate(model.States)] + ["-1"]
+
+                            interval_idxs = [str(i) for i, state in enumerate(model.States) if model.trans_probs[a][i] != -1] + ["-1"]
                             interval_strings = ["[" + str(prob[0])
-                                                +","+str(prob[1])+"]" for prob in model.trans_probs[a]]
+                                                +","+str(prob[1])+"]" for prob in model.trans_probs[a] if prob != -1]
                             succPieces = [intv +" : (x'="+str(i)+")"+kprime
                                           for (i,intv) in zip(interval_idxs, interval_strings)]
                         else:
@@ -389,7 +399,7 @@ class PRISM_writer:
                 "init k=0 endinit \n\n"
                 ]
 
-        labelPieces = ["(x="+str(x)+")" for x in model.Goals]
+        labelPieces = ["(x="+str(model.States.index(x))+")" for x in model.Goals]
         sep = "|"
         labelGuard = sep.join(labelPieces)
         labels = [
