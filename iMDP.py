@@ -39,15 +39,11 @@ class iMDP:
         self.B_pinv = np.linalg.pinv(self.dyn.B_full_rank) 
         
         np_incs = np.stack(([0 for i in range(self.N_d)],self.part_size)).T
-        import pdb; pdb.set_trace()
-        self.Actions = self.determine_actions() # check this, might not be right
-        self.trans_probs = self.determine_probs(num_samples)
+        self.Actions = self.determine_actions()
+        #self.trans_probs = self.determine_probs(num_samples)
 
-   # def create_probs(self, N):
-   #    """
-   #    function for adding new samples/ changing probabilities
-   #    """
-   #    self.trans_probs = self.determine_probs(N)
+    def update_probs(self, N):
+        self.trans_probs = self.determine_probs(N) # can we not throw away samples?
 
     def create_partition(self, min_pos, parts):
         state_increments = []
@@ -78,19 +74,19 @@ class iMDP:
         table[N,1] = 1-beta.ppf(beta_bar, N-1, 1)
         for k in tqdm(range(N)):
                 id_in = (k-1) // 1 +1
-                table[k,0] = 1 - beta.ppf(1-beta_bar, id_in+1, N-k)
+                table[k,0] = 1 - beta.ppf(1-beta_bar, id_in+1, N-id_in) # N-(d-k)+1 == N-k since d == 1
                 if k == 0:
                     table[k,1] = 1
                 else:
                     id_out = id_in - 1
-                    table[k,1] = 1 - beta.ppf(beta_bar, id_out+1, N-k)
+                    table[k,1] = 1 - beta.ppf(beta_bar, id_out+1, N-id_out)
         return table
 
     def determine_probs(self, N):
         """
         Enumerates over actions to find the probability of arriving in the goal state associated with that action
         """
-        self.lookup_table = self.create_table(N) # ubs still don't match?
+        self.lookup_table = self.create_table(N)
         print("Finding transition probabilities")
         enabled_actions = [act for act in self.Actions if len(self.Actions[act]) > 0]
         #with Pool() as p:
@@ -122,8 +118,7 @@ class iMDP:
     def add_noise(self, action, N):
         p = len(action)
         if hasattr(self.dyn, 'mu'):
-            resulting_states = np.tile(np.expand_dims(action,1),(1,N)).T +\
-                               np.random.multivariate_normal(self.dyn.mu, self.dyn.sigma, (N))
+            resulting_states = np.random.multivariate_normal(action, self.dyn.sigma, (N))
         else:
             resulting_states = np.zeros((N,p))
             self.dyn.state = np.expand_dims(pos,1)
@@ -135,18 +130,18 @@ class iMDP:
         probs = [[0,1] for state in self.States]
         probs.append([0,1])
         for j, N_in_j in enumerate(N_in):
-            if N_in_j > 0:
-                if j == len(N_in) - 1:
-                    k = N_in_j
+            if j == len(N_in) - 1:
+                k = N_in_j
 
-                    probs[j][0] = max(1e-4,1-dec_round(self.lookup_table[k,1],5))
-                    probs[j][1] = min(1,1-dec_round(self.lookup_table[k,0],5))
-                else:
+                probs[j][0] = max(1e-4,1-dec_round(self.lookup_table[k,1],5))
+                probs[j][1] = min(1,1-dec_round(self.lookup_table[k,0],5))
+            else:
+                if N_in_j > 0:
                     k = N-N_in_j
                     probs[j][0] = max(1e-4,dec_round(self.lookup_table[k,0],5))
                     probs[j][1] = min(1,dec_round(self.lookup_table[k,1],5))
-            else:
-                probs[j] = -1
+                else:
+                    probs[j] = -1
         return probs
 
     def find_state_index(self, x):
@@ -331,6 +326,7 @@ class PRISM_writer:
                     ]
         self.write_file(header+variable_defs, self.filename)
         
+        delta = model.dyn.grouped_timesteps
         for k in range(0, N, min_delta):
 
             if horizon == 'finite':
@@ -338,18 +334,18 @@ class PRISM_writer:
             else:
                 action_defs = []
 
-            action_defs += ["\t// Delta="+str(min_delta) + "\n"]
+            action_defs += ["\t// Delta="+str(delta) + "\n"]
 
-            bool_cont = k % min_delta == 0
+            bool_cont = k % delta == 0
 
-            if (k + min_delta <= N and bool_cont) or horizon == 'infinite':
+            if (k + delta <= N and bool_cont) or horizon == 'infinite':
 
                 for a_num, a in enumerate(model.Actions):
-                    actionLabel = "[a_"+str(a_num)+"_d_"+str(min_delta)+"]"
+                    actionLabel = "[a_"+str(a_num)+"_d_"+str(delta)+"]"
                     enabledIn = model.Actions[a]
 
                     if len(enabledIn) > 0:
-                        guardPieces = ["x="+str(i) for i, _ in enumerate(enabledIn)]
+                        guardPieces = ["x="+str(model.States.index(state)) for state in  enabledIn]
                         sep = " | "
                     
                         if horizon == "infinite":
@@ -429,6 +425,27 @@ class PRISM_writer:
         filehandle.writelines(content)
         filehandle.close()
 
+    def read_results(self, policy_file, vector_file):
+        policy = np.genfromtxt(policy_file, delimiter=',', dtype='str')
+        policy = np.flipud(policy)
+
+        optimal_policy= np.zeros(np.shape(policy)) 
+        optimal_delta= np.zeros(np.shape(policy)) 
+        optimal_reward = np.zeros(np.shape(policy)) 
+
+        optimal_reward[0,:] = np.genfromtxt(vector_file).flatten()
+        for i, row in enumerate(policy):
+            for j, value in enumerate(row):
+                if value != '':
+                    value_split = value.split('_')
+                    optimal_policy[i,j] = int(value_split[1])
+                    optimal_delta[i,j] = int(value_split[3])
+                else:
+                    optimal_policy[i,j] = -1
+                    optimal_delta[i,j] = -1
+        return optimal_policy, optimal_delta, optimal_reward
+
+
 def solve_PRISM(prism_file, spec, java_memory=2, prism_folder="~/Downloads/prism-imc/prism"):
     import subprocess
     file_prefix = "PRISM_out"
@@ -443,4 +460,3 @@ def solve_PRISM(prism_file, spec, java_memory=2, prism_folder="~/Downloads/prism
     subprocess.Popen(command, shell=True).wait()
 
     return policy_file, vector_file
-import progressbar

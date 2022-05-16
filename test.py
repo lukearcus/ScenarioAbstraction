@@ -7,6 +7,7 @@ import StateSpace
 import iMDP
 import controller
 import pickle
+from run_loop import run
 
 model = "room"
 if model == "drone":
@@ -50,15 +51,16 @@ if model == "drone":
     with open('test_imdp.pkl', 'wb') as outp:
         pickle.dump(test_imdp, outp, pickle.HIGHEST_PROTOCOL)
 elif model == "room":
-    init = np.array([[19.8],[37]])
 
+    init = np.array([[19.8],[37]])
     test = Dynamics.heat_1_room(init)
     ss = StateSpace.ContStateSpace(2, ((19.1, 36), (22.9, 40)), [], [((20.9, 36), (21.1, 40)) ])
 
     ax = ss.draw_space()
-    test_imdp = iMDP.iMDP(ss, test, (19,20), 6400)
-writer = iMDP.PRISM_writer(test_imdp, 64)
-iMDP.solve_PRISM(writer.filename, writer.specification, 12)
+
+    run(init, test, ss,(19,20),0.1) 
+import pdb; pdb.set_trace()
+
 #cntrl = controller.controller(test_imdp, test)
 #test = Dynamics.Drone_dryden(init, T, 10, -10, 5)
 #states = [test.state]

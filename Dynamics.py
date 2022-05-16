@@ -2,7 +2,8 @@ import numpy as np
 import BAS_params as BAS_class
 
 class dynamic_base:
-
+    
+    horizon = 64
     grouped_timesteps = 1
     def __init__(self, init_state):
         self.state = init_state
