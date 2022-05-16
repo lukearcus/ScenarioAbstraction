@@ -35,12 +35,12 @@ class iMDP:
         self.Goals = self.find_goals()
         self.Unsafes = self.find_unsafes()
         self.end_corners_flat = np.reshape(self.corner_array[:,[0,-1],:],(-1,self.N_d))
-        #import pdb; pdb.set_trace()
         self.A_pinv = np.linalg.pinv(self.dyn.A)
         self.B_pinv = np.linalg.pinv(self.dyn.B_full_rank) 
         
         np_incs = np.stack(([0 for i in range(self.N_d)],self.part_size)).T
-        self.Actions = self.determine_actions()
+        import pdb; pdb.set_trace()
+        self.Actions = self.determine_actions() # check this, might not be right
         self.trans_probs = self.determine_probs(num_samples)
 
    # def create_probs(self, N):
@@ -76,13 +76,13 @@ class iMDP:
         table = np.zeros((N+1, 2))
         table[N,0] = 0
         table[N,1] = 1-beta.ppf(beta_bar, N-1, 1)
-        for k in progressbar.progressbar(range(N)):
-                id_in = (k-1) // 2
+        for k in tqdm(range(N)):
+                id_in = (k-1) // 1 +1
                 table[k,0] = 1 - beta.ppf(1-beta_bar, id_in+1, N-k)
                 if k == 0:
                     table[k,1] = 1
                 else:
-                    id_out = id_in + 1
+                    id_out = id_in - 1
                     table[k,1] = 1 - beta.ppf(beta_bar, id_out+1, N-k)
         return table
 
@@ -90,7 +90,7 @@ class iMDP:
         """
         Enumerates over actions to find the probability of arriving in the goal state associated with that action
         """
-        self.lookup_table = self.create_table(N)
+        self.lookup_table = self.create_table(N) # ubs still don't match?
         print("Finding transition probabilities")
         enabled_actions = [act for act in self.Actions if len(self.Actions[act]) > 0]
         #with Pool() as p:
@@ -129,44 +129,22 @@ class iMDP:
             self.dyn.state = np.expand_dims(pos,1)
             for i in range(N):
                 resulting_states[i,:] = (np.expand_dims(pos,1) + self.dyn.noise()).T
-
         return resulting_states
 
     def samples_to_prob(self, N, N_in):
         probs = [[0,1] for state in self.States]
         probs.append([0,1])
-        deadlock_lb = 1
         for j, N_in_j in enumerate(N_in):
             if N_in_j > 0:
-                k = N-N_in_j
-                probs[j][0] = dec_round(self.lookup_table[k,0],5)
-                probs[j][1] = dec_round(self.lookup_table[k,1],5)
-                deadlock_lb -= probs[j][0]
-                #if k == N:
-                #    probs[j][0] = 0
-                #    probs[j][1] = 1- beta.ppf(beta_bar, N-1, 1)
-                #else:
-                #    id_in = (k-1) // 2
-                #    probs[j][0] = 1 - beta.ppf(1-beta_bar, id_in+1, N_in_j)
-                #    if k == 0:
-                #        probs[j][1] = 1
-                #    else:
-                #        id_out = id_in + 1
-                #        probs[j][1] = 1 - beta.ppf(beta_bar, id_out+1, N_in_j) 
                 if j == len(N_in) - 1:
-                    low = probs[j][0]
-                    upp = probs[j][1]
-                    #probs[j][0] = 1 - upp
-                    probs[j][1] = 1 - low
-                    probs[j][0] = deadlock_lb
-                #if N_in_j < N:
-                #    if N_in_j == 0:
-                #        probs[j][0] = 0
-                #    else:
-                #        probs[j][0] = beta.ppf(beta_bar, N_in_j + 1, N-(N_in_j+1)+1) # should precompute these
-                #    probs[j][1] = beta.ppf(1-beta_bar, N_in_j+1, N-(N_in_j+1)+1)
-                #else:
-                #    probs[j][0] = 1
+                    k = N_in_j
+
+                    probs[j][0] = max(1e-4,1-dec_round(self.lookup_table[k,1],5))
+                    probs[j][1] = min(1,1-dec_round(self.lookup_table[k,0],5))
+                else:
+                    k = N-N_in_j
+                    probs[j][0] = max(1e-4,dec_round(self.lookup_table[k,0],5))
+                    probs[j][1] = min(1,dec_round(self.lookup_table[k,1],5))
             else:
                 probs[j] = -1
         return probs
@@ -317,21 +295,34 @@ class MDP(iMDP):
 
 class PRISM_writer:
 
-    def __init__(self, model, N=-1, mode="interval"):
-        if N == -1:
-            horizon = "infinite"
-        else:
+    def __init__(self, model, N=-1, mode="interval", horizon="infinite"):
+        if horizon != "infinite":
             horizon = str(N) + "_steps"
         self.filename = "ScenAbs_" + type(model.dyn).__name__ + "_" + mode + "_" + horizon + ".prism"
         
         if horizon == "infinite":
-            raise NotImplementedError
+            min_delta = N
+            modeltype = type(model).__name__
+            header = [
+                "// "+modeltype+" (filter-based abstraction method) \n",
+                "// Infinite horizon version \n\n"
+                "mdp \n\n",
+                # "const int xInit; \n\n",
+                "const int regions = "+str(int(len(model.States)-1))+"; \n\n",
+                "module "+modeltype+"_abstraction \n\n",
+                ]
+            
+            # Define variables in module
+            variable_defs = [
+                "\tx : [-1..regions]; \n\n",
+                ]
         else:
+            min_delta = model.dyn.grouped_timesteps
             header = [
                     "// " + type(model).__name__ + " (scenario-based abstraction method) \n\n",
                     "mdp \n\n",
                     "const int Nhor = " + str(int(N/model.dyn.grouped_timesteps)) + "; \n",
-                    "const int regions = " + str(int(len(model.States))) + "; \n\n", #maybe -1?
+                    "const int regions = " + str(int(len(model.States)-1)) + "; \n\n", #maybe -1?
                     "module iMDP \n\n",
                     ]
             variable_defs = [
@@ -340,21 +331,21 @@ class PRISM_writer:
                     ]
         self.write_file(header+variable_defs, self.filename)
         
-        for k in range(0, N, model.dyn.grouped_timesteps):
+        for k in range(0, N, min_delta):
 
             if horizon == 'finite':
                 action_defs += ["\t// Actions for k="+str(k)+"\n"]
             else:
                 action_defs = []
 
-            action_defs += ["\t// Delta="+str(model.dyn.grouped_timesteps) + "\n"]
+            action_defs += ["\t// Delta="+str(min_delta) + "\n"]
 
-            bool_cont = k % model.dyn.grouped_timesteps == 0
+            bool_cont = k % min_delta == 0
 
-            if (k + model.dyn.grouped_timesteps <= N and bool_cont) or horizon == 'infinite':
+            if (k + min_delta <= N and bool_cont) or horizon == 'infinite':
 
                 for a_num, a in enumerate(model.Actions):
-                    actionLabel = "[a_"+str(a_num)+"_d_"+str(model.dyn.grouped_timesteps)+"]"
+                    actionLabel = "[a_"+str(a_num)+"_d_"+str(min_delta)+"]"
                     enabledIn = model.Actions[a]
 
                     if len(enabledIn) > 0:
@@ -366,7 +357,7 @@ class PRISM_writer:
                             kprime = ""
                         else:
                             guardStates = sep.join(guardPieces)
-                            guard = "k="+str(int(k/model.dyn.grouped_timesteps)) + " & ("+guardStates+")"
+                            guard = "k="+str(int(k/min_delta)) + " & ("+guardStates+")"
                             kprime = "&(k'=k+"+str(1) + ")"
 
                         if mode == "interval":

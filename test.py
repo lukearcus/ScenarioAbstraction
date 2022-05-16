@@ -56,7 +56,7 @@ elif model == "room":
     ss = StateSpace.ContStateSpace(2, ((19.1, 36), (22.9, 40)), [], [((20.9, 36), (21.1, 40)) ])
 
     ax = ss.draw_space()
-    test_imdp = iMDP.iMDP(ss, test, (19,20), 100)
+    test_imdp = iMDP.iMDP(ss, test, (19,20), 6400)
 writer = iMDP.PRISM_writer(test_imdp, 64)
 iMDP.solve_PRISM(writer.filename, writer.specification, 12)
 #cntrl = controller.controller(test_imdp, test)
