@@ -1,8 +1,8 @@
 import matplotlib.pyplot as plt
 from mpl_toolkits import mplot3d
 
-def heat_map(rewards, grid):
-    plt.imshow(rewards[1:].reshape(grid))
+def heatmap(rewards, grid,xlim,ylim):
+    ax = plt.imshow(rewards[1:].reshape(grid), extent=xlim+ylim)
     plt.show()
 
 def drone_plot(data, T, ax=None):

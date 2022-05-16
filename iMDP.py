@@ -19,7 +19,7 @@ class iMDP:
 
 
     """
-    def __init__(self, Cont_state_space, Dynamics, parts, num_samples, _beta = 0.01):
+    def __init__(self, Cont_state_space, Dynamics, parts, _beta = 0.01):
         """
         Const_state_space is StateSpace object
         parts is a list/ tuple of partitions for each dimension
@@ -290,10 +290,10 @@ class MDP(iMDP):
 
 class PRISM_writer:
 
-    def __init__(self, model, N=-1, mode="interval", horizon="infinite"):
+    def __init__(self, model, N=-1, output_folder='output', mode="interval", horizon="infinite"):
         if horizon != "infinite":
             horizon = str(N) + "_steps"
-        self.filename = "ScenAbs_" + type(model.dyn).__name__ + "_" + mode + "_" + horizon + ".prism"
+        self.filename = output_folder + "/ScenAbs_" +mode + "_" + horizon + ".prism"
         
         if horizon == "infinite":
             min_delta = N
@@ -431,9 +431,9 @@ class PRISM_writer:
 
         optimal_policy= np.zeros(np.shape(policy)) 
         optimal_delta= np.zeros(np.shape(policy)) 
-        optimal_reward = np.zeros(np.shape(policy)) 
+        optimal_reward = np.zeros(np.shape(policy)[1]) 
 
-        optimal_reward[0,:] = np.genfromtxt(vector_file).flatten()
+        optimal_reward = np.genfromtxt(vector_file).flatten()
         for i, row in enumerate(policy):
             for j, value in enumerate(row):
                 if value != '':
@@ -446,9 +446,9 @@ class PRISM_writer:
         return optimal_policy, optimal_delta, optimal_reward
 
 
-def solve_PRISM(prism_file, spec, java_memory=2, prism_folder="~/Downloads/prism-imc/prism"):
+def solve_PRISM(prism_file, spec, output_folder = '/output', java_memory=2, prism_folder="~/Downloads/prism-imc/prism"):
     import subprocess
-    file_prefix = "PRISM_out"
+    file_prefix = output_folder + "/PRISM_out"
     policy_file = file_prefix + "_policy.csv"
     vector_file = file_prefix + "_vector.csv"
     options = ' -ex -exportadv "'+policy_file+'"' + \

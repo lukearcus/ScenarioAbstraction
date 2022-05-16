@@ -1,12 +1,13 @@
 import matplotlib.pyplot as plt
 from mpl_toolkits import mplot3d
 import numpy as np
+import pickle
+
 import Dynamics
-import drone_plotter
+import plot_funcs
 import StateSpace
 import iMDP
 import controller
-import pickle
 from run_loop import run
 
 model = "room"
@@ -56,10 +57,12 @@ elif model == "room":
     test = Dynamics.heat_1_room(init)
     ss = StateSpace.ContStateSpace(2, ((19.1, 36), (22.9, 40)), [], [((20.9, 36), (21.1, 40)) ])
 
-    ax = ss.draw_space()
+    
+    opt_pol, opt_delta, opt_rew = run(init, test, ss,(19,20),0.25) 
 
-    run(init, test, ss,(19,20),0.1) 
-import pdb; pdb.set_trace()
+plot_funcs.heatmap(opt_rew, (19,20), [36,40], [22.9,19.1])
+
+#ax = ss.draw_space()
 
 #cntrl = controller.controller(test_imdp, test)
 #test = Dynamics.Drone_dryden(init, T, 10, -10, 5)
