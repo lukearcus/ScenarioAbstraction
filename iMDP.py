@@ -34,7 +34,7 @@ class iMDP:
         self.States, self.corner_array, self.corners_flat = self.create_partition(min_pos, parts)
         self.end_corners_flat = np.reshape(self.corner_array[:,[0,-1],:],(-1,self.N_d))
         self.adj_states = self.build_adj_states()
-        self.time_state_ind(self.States[10000])
+#        self.time_state_ind(self.States[10000])
         self.Goals = self.find_goals()
         self.Unsafes = self.find_unsafes()
         self.A_pinv = np.linalg.pinv(self.dyn.A)
@@ -170,8 +170,44 @@ class iMDP:
         #import pdb; pdb.set_trace()
 
     def find_state_index_with_init(self, x, start):
-        start_ind = self.States.index(start)
-        self.find_state_index(x, self.adj_states[start_ind])
+        inds = [i for i in range(x.shape[0])]
+        valids = self.check_in_valid_range(x)
+        test_states = x[valids,:]
+        results = [-1 if valid else len(self.States) for valid in valids]
+        inds = [inds[i] for i, valid in enumerate(valids) if valid]
+        start_ind = self.States.index(start) 
+        test_set = [start_ind]
+        tested = []
+        while -1 in results:
+            curr_found = self.find_state_index(test_states, test_set)
+            for i, found in enumerate(curr_found):
+                if found != -1:
+                    results[inds[i]] = found
+            inds = [inds[i] for i, found in enumerate(curr_found) if found == -1]
+            test_states = x[inds,:]
+            tested += test_set
+            next_test = []
+            for test_ind in test_set: 
+                next_test += self.adj_states[test_ind]
+            test_set = list(set(next_test))
+        return results
+
+    def check_in_valid_range(self, x):
+
+        if len(x.shape) < 2:
+            test_pos = x[np.newaxis, np.newaxis, :]
+            num_ins = 1
+        else:
+            test_pos = x[:, np.newaxis, :]
+            num_ins = x.shape[0]
+        shape =  (num_ins,1,2,self.corner_array.shape[2])
+        end_corners = self.corner_array[[0,-1],[0,-1],:] # could use end_corners_flat and access relevant bits
+        flat_ends = np.reshape(end_corners,(-1,self.N_d))
+        signs = (np.sign(flat_ends-test_pos)+1).astype('bool')
+        reshaped = signs.reshape(shape)
+        summed = np.logical_xor(reshaped[:,:,0,:],reshaped[:,:,1,:])
+        abs_sum = np.all(summed,2)
+        return [np.any(abs_sum[i,:]) for i in range(num_ins) ]
 
     def find_state_index(self, x, state_inds_to_check = 'all'):
         if len(x.shape) < 2:
@@ -206,9 +242,7 @@ class iMDP:
             reshaped = signs.reshape(shape)
             summed = np.logical_xor(reshaped[:,:,0,:],reshaped[:,:,1,:])
             abs_sum = np.all(summed,2)
-            list_out =  [state_inds_to_check[np.where(abs_sum[i,:])[0][0]] if np.any(abs_sum[i,:]) else len(self.States) for i in range(num_ins) ]
-            import pdb; pdb.set_trace()
-            
+            list_out =  [state_inds_to_check[np.where(abs_sum[i,:])[0][0]] if np.any(abs_sum[i,:]) else -1 for i in range(num_ins) ]
 
         #list_out = [np.where(abs_sum[i,:]==0)[0][0] if not np.all(abs_sum[i,:]) else len(self.States) for i in range(num_ins) ]
         #list_out_time = time.perf_counter() - abs_sum_time
