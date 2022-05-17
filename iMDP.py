@@ -32,18 +32,27 @@ class iMDP:
         self.part_size = (Cont_state_space.valid_range[1]-Cont_state_space.valid_range[0])/parts
         
         self.States, self.corner_array, self.corners_flat = self.create_partition(min_pos, parts)
+        self.end_corners_flat = np.reshape(self.corner_array[:,[0,-1],:],(-1,self.N_d))
+        self.adj_states = self.build_adj_states()
+        self.time_state_ind(self.States[10000])
         self.Goals = self.find_goals()
         self.Unsafes = self.find_unsafes()
-        self.end_corners_flat = np.reshape(self.corner_array[:,[0,-1],:],(-1,self.N_d))
         self.A_pinv = np.linalg.pinv(self.dyn.A)
         self.B_pinv = np.linalg.pinv(self.dyn.B_full_rank) 
         
         np_incs = np.stack(([0 for i in range(self.N_d)],self.part_size)).T
         self.Actions = self.determine_actions()
-        #self.trans_probs = self.determine_probs(num_samples)
+        self.trans_probs = self.determine_probs(num_samples)
 
     def update_probs(self, N):
         self.trans_probs = self.determine_probs(N) # can we not throw away samples?
+   
+    def build_adj_states(self):
+        #import pdb; pdb.set_trace()
+        incs = np.vstack((np.diag(self.part_size),np.diag(-self.part_size)))
+        adj_array = np.array(self.States)[:, np.newaxis, :] + incs
+        adj_states = [[self.States.index(tuple(adj_state)) for adj_state in adj if (tuple(adj_state) in self.States) ] for adj in adj_array]
+        return adj_states 
 
     def create_partition(self, min_pos, parts):
         state_increments = []
@@ -144,33 +153,73 @@ class iMDP:
                     probs[j] = -1
         return probs
 
-    def find_state_index(self, x):
+    def time_state_ind(self, start = None):
+        import time
+
+        if start is None:
+            test_states = self.corners_flat[0] + np.random.rand(100,6) @ np.diag(self.corners_flat[-1]-self.corners_flat[0])
+        else:
+            test_states = np.random.multivariate_normal(start, self.dyn.sigma, (100))
+        tic = time.perf_counter()  
+        states = self.find_state_index_with_init(test_states, start)
+        toc = time.perf_counter()
+        print(states)
+        print(toc-tic)
+        import sys
+        sys.exit()
+        #import pdb; pdb.set_trace()
+
+    def find_state_index_with_init(self, x, start):
+        start_ind = self.States.index(start)
+        self.find_state_index(x, self.adj_states[start_ind])
+
+    def find_state_index(self, x, state_inds_to_check = 'all'):
         if len(x.shape) < 2:
             test_pos = x[np.newaxis, np.newaxis, :]
             num_ins = 1
         else:
             test_pos = x[:, np.newaxis, :]
             num_ins = x.shape[0]
-        shape =  (num_ins,self.corner_array.shape[0],2,self.corner_array.shape[2])
-        signs = np.sign(self.end_corners_flat - test_pos)
-        reshaped = signs.reshape(shape)
-        summed = reshaped.sum(2)
-        abs_sum = np.abs(summed).sum(2)
+        if state_inds_to_check == 'all':
+            #import time
+            #start = time.perf_counter()
+            shape =  (num_ins,self.corner_array.shape[0],2,self.corner_array.shape[2])
+            #shape_time = time.perf_counter()
+            #signs = np.sign(self.end_corners_flat - test_pos).astype('int8')
+            signs = (np.sign(self.end_corners_flat-test_pos)+1).astype('bool')
+            #signs_time  = time.perf_counter() 
+            reshaped = signs.reshape(shape)
+            #reshape_time = time.perf_counter()
+            #summed = reshaped.sum(2)
+            summed = np.logical_xor(reshaped[:,:,0,:],reshaped[:,:,1,:])
+            #summed_time = time.perf_counter()
+            #abs_sum = summed.astype('bool').sum(2)
+            abs_sum = np.all(summed,2)
+            #abs_sum_time = time.perf_counter()
+            list_out =  [np.where(abs_sum[i,:]) if np.any(abs_sum[i,:]) else len(self.States) for i in range(num_ins) ]
+        else:
+            shape = (num_ins,len(state_inds_to_check),2,self.corner_array.shape[2])
+            end_corners = self.corner_array[:,[0,-1],:] # could use end_corners_flat and access relevant bits
+            relevant_ends = end_corners[state_inds_to_check,:,:] 
+            corners_to_check = np.reshape(relevant_ends,(-1,self.N_d))
+            signs = (np.sign(corners_to_check-test_pos)+1).astype('bool')
+            reshaped = signs.reshape(shape)
+            summed = np.logical_xor(reshaped[:,:,0,:],reshaped[:,:,1,:])
+            abs_sum = np.all(summed,2)
+            list_out =  [state_inds_to_check[np.where(abs_sum[i,:])[0][0]] if np.any(abs_sum[i,:]) else len(self.States) for i in range(num_ins) ]
+            import pdb; pdb.set_trace()
+            
 
-        # might be able to just check >= and should be last state
-        return [np.where(abs_sum[i,:]==0)[0][0] if not np.all(abs_sum[i,:]) else len(self.States) for i in range(num_ins) ]
-        #if state_ind.shape[0] > 0:
-        #    return np.random.choice(state_ind)
-        #else:
-        #    return len(self.States)
-        #for state in self.States:
-        #    if np.all(x >= state - self.part_size/2) and np.all(x <= state + self.part_size/2):
-        #        return self.States.index(state)
-        #return len(self.States)
-
-    def corner_to_state(self, corner):
-        np.where()
-
+        #list_out = [np.where(abs_sum[i,:]==0)[0][0] if not np.all(abs_sum[i,:]) else len(self.States) for i in range(num_ins) ]
+        #list_out_time = time.perf_counter() - abs_sum_time
+        #abs_sum_time -= summed_time
+        #summed_time-=reshape_time
+        #reshape_time-=signs_time
+        #signs_time -= shape_time
+        #shape_time -= start
+        #import pdb; pdb.set_trace()
+        return  list_out
+    
     def determine_actions(self):
         print("Determining actions")
         u = [[self.dyn.u_min[i], self.dyn.u_max[i]] for i in range(len(self.dyn.u_max))]
@@ -227,6 +276,8 @@ class iMDP:
         return actions
     
     def inv_reachable(self, act, allRegionVertices, parallelo2cube, n):
+        
+        # I reckon this might be able to be parallelised
         A_inv_d = self.A_pinv @ np.array(act)
         all_vert_normed = (A_inv_d @ parallelo2cube) - allRegionVertices
 

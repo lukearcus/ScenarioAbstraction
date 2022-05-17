@@ -5,6 +5,7 @@ class dynamic_base:
     
     horizon = 64
     grouped_timesteps = 1
+    Q = 0
     def __init__(self, init_state):
         self.state = init_state
 
@@ -168,21 +169,22 @@ class Full_Drone_Base(Drone_base):
 
 class Drone_gauss(Drone_base):
     def __init__(self, init_state, T,max_acc = float('inf'), min_acc = -float('inf'), _mu=0, _sigma=1):
-        self.mu = _mu
-        self.sigma = _sigma
+        self.mu = np.ones((6,1))*_mu
+        self.sigma = np.diag(np.ones((6))*_sigma)
         super().__init__(init_state, T,max_acc, min_acc)
 
     def noise(self):
-        return np.random.normal(self.mu, self.sigma, (6,1))
+        return np.random.multivariate_normal(self.mu, self.sigma)
 
 class Full_Drone_gauss(Full_Drone_Base):
     def __init__(self, init_state, T,max_acc = float('inf'), min_acc = -float('inf'), _mu=0, _sigma=1):
-        self.mu = _mu
-        self.sigma = _sigma
+        self.mu = np.ones((6,1))*_mu
+        self.sigma = np.diag(np.ones((6))*_sigma)
         super().__init__(init_state, T,max_acc, min_acc)
 
     def noise(self):
-        return self.A_1_step @ np.random.normal(self.mu, self.sigma, (6,1)) + np.random.normal(self.mu, self.sigma, (6,1))
+        return self.A_1_step @ np.random.multivariate_normal(self.mu, self.sigma)+ np.random.multivariate_normal(self.mu, self.sigma)
+
 
 
 class Drone_dryden(Drone_base):

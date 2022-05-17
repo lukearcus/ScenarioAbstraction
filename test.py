@@ -10,7 +10,7 @@ import iMDP
 import controller
 from run_loop import run
 
-model = "room"
+model = "drone"
 if model == "drone":
     init_pos = np.ones((3,1))*1
     init_pos[2] = 6
@@ -18,7 +18,7 @@ if model == "drone":
     init = np.concatenate((init_pos,init_vel))
     T=1
     #test = Dynamics.Full_Drone_dryden(init, T, 4, -4, 5)
-    test = Dynamics.Full_Drone_gauss(init, T, 4, -4, 0, 0.1)
+    test = Dynamics.Full_Drone_gauss(init, T, 4, -4, 0, 0.5)
     control = np.ones((6,1))*1
     
     
