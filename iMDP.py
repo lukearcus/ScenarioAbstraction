@@ -5,7 +5,7 @@ from scipy.spatial import Delaunay
 from multiprocessing import Pool
 from tqdm import tqdm
 from functools import partial
-
+import time
 def dec_round(num, decimals):
     return num // 10**-decimals / 10**decimals
 
@@ -19,6 +19,7 @@ class iMDP:
 
 
     """
+    MAX_MEM=16 # max memory allowance in GB
     def __init__(self, Cont_state_space, Dynamics, parts, _beta = 0.01):
         """
         Const_state_space is StateSpace object
@@ -30,10 +31,14 @@ class iMDP:
         self.dyn = Dynamics
         min_pos = Cont_state_space.valid_range[0]
         self.part_size = (Cont_state_space.valid_range[1]-Cont_state_space.valid_range[0])/parts
-        
+        state_start = time.perf_counter()
         self.States, self.corner_array, self.corners_flat = self.create_partition(min_pos, parts)
         self.end_corners_flat = np.reshape(self.corner_array[:,[0,-1],:],(-1,self.N_d))
-        self.adj_states = self.build_adj_states()
+        state_end = time.perf_counter()
+        print("States set up in "+str(state_end-state_start))
+        self.adj_states = self.build_adj_states() # this is slow
+        adj_end  = time.perf_counter()
+        print("Adjacency set up in "+str(adj_end-state_end))
 #        self.time_state_ind(self.States[10000])
         self.Goals = self.find_goals()
         self.Unsafes = self.find_unsafes()
@@ -41,8 +46,10 @@ class iMDP:
         self.B_pinv = np.linalg.pinv(self.dyn.B_full_rank) 
         
         np_incs = np.stack(([0 for i in range(self.N_d)],self.part_size)).T
+        act_start = time.perf_counter()
         self.Actions = self.determine_actions()
-        self.trans_probs = self.determine_probs(num_samples)
+        act_end = time.perf_counter()
+        print("Actions set up in "+str(act_end-act_start))
 
     def update_probs(self, N):
         self.trans_probs = self.determine_probs(N) # can we not throw away samples?
@@ -217,21 +224,11 @@ class iMDP:
             test_pos = x[:, np.newaxis, :]
             num_ins = x.shape[0]
         if state_inds_to_check == 'all':
-            #import time
-            #start = time.perf_counter()
             shape =  (num_ins,self.corner_array.shape[0],2,self.corner_array.shape[2])
-            #shape_time = time.perf_counter()
-            #signs = np.sign(self.end_corners_flat - test_pos).astype('int8')
             signs = (np.sign(self.end_corners_flat-test_pos)+1).astype('bool')
-            #signs_time  = time.perf_counter() 
             reshaped = signs.reshape(shape)
-            #reshape_time = time.perf_counter()
-            #summed = reshaped.sum(2)
             summed = np.logical_xor(reshaped[:,:,0,:],reshaped[:,:,1,:])
-            #summed_time = time.perf_counter()
-            #abs_sum = summed.astype('bool').sum(2)
             abs_sum = np.all(summed,2)
-            #abs_sum_time = time.perf_counter()
             list_out =  [np.where(abs_sum[i,:]) if np.any(abs_sum[i,:]) else len(self.States) for i in range(num_ins) ]
         else:
             shape = (num_ins,len(state_inds_to_check),2,self.corner_array.shape[2])
@@ -243,15 +240,6 @@ class iMDP:
             summed = np.logical_xor(reshaped[:,:,0,:],reshaped[:,:,1,:])
             abs_sum = np.all(summed,2)
             list_out =  [state_inds_to_check[np.where(abs_sum[i,:])[0][0]] if np.any(abs_sum[i,:]) else -1 for i in range(num_ins) ]
-
-        #list_out = [np.where(abs_sum[i,:]==0)[0][0] if not np.all(abs_sum[i,:]) else len(self.States) for i in range(num_ins) ]
-        #list_out_time = time.perf_counter() - abs_sum_time
-        #abs_sum_time -= summed_time
-        #summed_time-=reshape_time
-        #reshape_time-=signs_time
-        #signs_time -= shape_time
-        #shape_time -= start
-        #import pdb; pdb.set_trace()
         return  list_out
     
     def determine_actions(self):
@@ -261,7 +249,7 @@ class iMDP:
         for i, u_elem in enumerate(itertools.product(*u)):
             list_elem = list(u_elem)
             x_inv_area[i,:] = (self.A_pinv @ (self.dyn.B @ np.array(list_elem) + self.dyn.Q)).flatten()
-        corners_array = self.corners_flat
+        corners_array = self.end_corners_flat
 
         dim_equal = self.dyn.A.shape[0] == self.dyn.B.shape[1]
         if dim_equal:
@@ -289,8 +277,21 @@ class iMDP:
             allRegionVertices = corners_array
         if dim_equal:
             actions = {i : [] for i in self.States if i not in self.Unsafes}
-            for act in tqdm(actions):
-                actions[act] = self.inv_reachable(act, allRegionVertices, parallelo2cube, n)
+            nr_acts = len(actions)
+            if nr_acts*len(self.States)*2*n*16 <= self.MAX_MEM*8*(1024**3):
+                act_array = np.array(list(actions.keys())).T
+                A_inv_d = self.A_pinv @ act_array
+                all_vert_normed = (A_inv_d.T @ parallelo2cube)[:,np.newaxis,:].astype('float16') - allRegionVertices.astype('float16')
+                
+                ## 
+                poly_reshape = np.reshape(all_vert_normed, (nr_acts, len(self.States),n*2))
+                enabled_in = np.maximum(np.max(poly_reshape, axis=2), -np.min(poly_reshape, axis=2)) <= 1.0
+                for i, act in enumerate(actions):
+                    state_ids = np.where(enabled_in[i,:])[0]
+                    actions[act] = [self.States[state_id] for state_id in state_ids if self.States[state_id] not in self.Unsafes]
+            else:
+                for act in tqdm(actions):
+                    actions[act] = self.inv_reachable(act, allRegionVertices, parallelo2cube, n)
         else:
             actions = {i : [] for i in self.States if i not in self.Unsafes}
             for act in tqdm(actions):
