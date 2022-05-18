@@ -70,7 +70,7 @@ def get_imdp(load_sel, model):
         if save_sel == 'Y':
             with open("stored_abstractions/"+model+'_imdp.pkl', 'wb') as outp:
                 pickle.dump(imdp_abstr, outp, pickle.HIGHEST_PROTOCOL)
-        return imdp_abstr, ss, dyn, init
+        return imdp_abstr, ss, dyn, init, grid
 
 def main():
     """
@@ -79,7 +79,7 @@ def main():
     lb_sat_prob=0.25
     model = opt.model_choice()
     load_sel = opt.load_choice()
-    imdp_abstr, ss, dyn, init_state = get_imdp(load_sel, model)
+    imdp_abstr, ss, dyn, init_state, grid = get_imdp(load_sel, model)
     opt_pol, opt_delta, opt_rew = run(init_state, dyn, imdp_abstr,grid,lb_sat_prob)
     plot_funcs.create_plots(model, opt_pol, opt_rew)
     # draw some other nice things here
