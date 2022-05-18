@@ -1,5 +1,5 @@
 import numpy as np
-import BAS_params as BAS_class
+import main.BAS_params as BAS_class
 
 class dynamic_base:
     
