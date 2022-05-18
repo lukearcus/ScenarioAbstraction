@@ -53,7 +53,7 @@ class iMDP:
         """
         Updates probabilities with new number of samples, N
         """
-        self.trans_probs = self.determine_probs(N) # can we not throw away samples?
+        self.trans_probs, self.trans_ids = self.determine_probs(N) # can we not throw away samples?
 
     def build_adj_states(self):
         """
@@ -122,9 +122,10 @@ class iMDP:
         print("Finding transition probabilities")
         enabled_actions = [act for act in self.Actions if len(self.Actions[act]) > 0]
         probs = {act:[] for act in enabled_actions}
+        ids = dict(probs)
         for action in tqdm(enabled_actions):
-            probs[action] = self.comp_bounds(action, N)
-        return probs
+            ids[action], probs[action] = self.comp_bounds(action, N)
+        return probs, ids
 
     def comp_bounds(self, action, N):
         """
@@ -134,7 +135,8 @@ class iMDP:
         inds = self.find_state_index_with_init(resulting_states, action)
         N_in = [inds.count(i) for i in range(len(self.States)+1)]
         probs = self.samples_to_prob(N, N_in)
-        return probs
+        arr = np.array([[i,p] for i, p in enumerate(probs) if p != -1], dtype='object')
+        return list(arr[:,0]), list(arr[:,1])
 
     def add_noise(self, action, N):
         """
@@ -293,7 +295,7 @@ class iMDP:
                 enabled_in = np.maximum(np.max(poly_reshape, axis=2), -np.min(poly_reshape, axis=2)) <= 1.0
                 for i, act in enumerate(actions):
                     state_ids = np.where(enabled_in[i,:])[0]
-                    actions[act] = [self.States[state_id] for state_id in state_ids if self.States[state_id] not in self.Unsafes]
+                    actions[act] = [state_id for state_id in state_ids if self.States[state_id] not in self.Unsafes]
             else:
                 for act in tqdm(actions):
                     A_inv_d = self.A_pinv @ np.array(act)
@@ -302,7 +304,7 @@ class iMDP:
                     poly_reshape = np.reshape(all_vert_normed, (len(self.States),n*(2**n)))
                     enabled_in = np.maximum(np.max(poly_reshape, axis=1), -np.min(poly_reshape, axis=1)) <= 1.0
                     state_ids = np.where(enabled_in)[0]
-                    actions[act] = [self.States[state_id] for state_id in state_ids\
+                    actions[act] = [state_id for state_id in state_ids\
                                     if self.States[state_id] not in self.Unsafes]
 
         else:
@@ -320,7 +322,7 @@ class iMDP:
                                 if state_counter[state] == 2**self.N_d:
                                     actions[act].append(state)
                 state_ids = np.where(enabled_in)[0]
-                actions[act] = [self.States[state_id] for state_id in state_ids if self.States[state_id] not in self.Unsafes]
+                actions[act] = [state_id for state_id in state_ids if self.States[state_id] not in self.Unsafes]
         return actions
 
     def find_unsafes(self):
@@ -364,15 +366,15 @@ class PRISM_writer:
     """
     def __init__(self, _model, _N=-1, input_folder='input', output_folder='output', _mode="interval", _horizon="infinite"):
         self.mode = _mode
-        self.model = model
+        self.model = _model
         self.N = _N
         if _horizon != "infinite":
             self.horizon = str(N) + "_steps"
         else:
             self.horizon = _horizon
         self.prism_filename = input_folder + "/ScenAbs_"+_mode + "_" + _horizon + ".prism"
-        self.spec_filename = input_folder + "/ScenAbs_"+_mode + "_" + horizon + ".pctl"
-        file_prefix = self.output_folder + "/PRISM_out"
+        self.spec_filename = input_folder + "/ScenAbs_"+_mode + "_" + _horizon + ".pctl"
+        file_prefix = output_folder + "/PRISM_out"
         self.vector_filename = file_prefix + "_vector.csv"
         self.policy_filename = file_prefix + "_policy.csv"
 
@@ -433,12 +435,12 @@ class PRISM_writer:
 
             if (k + delta <= N and bool_cont) or horizon == 'infinite':
 
-                for a_num, a in enumerate(model.Actions):
+                for a_num, a in enumerate(tqdm(model.Actions)):
                     actionLabel = "[a_"+str(a_num)+"_d_"+str(delta)+"]"
                     enabledIn = model.Actions[a]
 
                     if len(enabledIn) > 0:
-                        guardPieces = ["x="+str(model.States.index(state)) for state in  enabledIn]
+                        guardPieces = ["x="+str(state) for state in  enabledIn]
                         sep = " | "
 
                         if horizon == "infinite":
@@ -450,10 +452,11 @@ class PRISM_writer:
                             kprime = "&(k'=k+"+str(1) + ")"
 
                         if mode == "interval":
+                            interval_idxs = [str(i) for i in model.trans_ids]
+                            interval_idxs[-1] = ["-1"]
 
-                            interval_idxs = [str(i) for i, state in enumerate(model.States) if model.trans_probs[a][i] != -1] + ["-1"]
                             interval_strings = ["[" + str(prob[0])
-                                                +","+str(prob[1])+"]" for prob in model.trans_probs[a] if prob != -1]
+                                                +","+str(prob[1])+"]" for prob in model.trans_probs[a]]
                             succPieces = [intv +" : (x'="+str(i)+")"+kprime
                                           for (i,intv) in zip(interval_idxs, interval_strings)]
                         else:
@@ -493,7 +496,7 @@ class PRISM_writer:
 
         print("Succesfully exported PRISM file")
 
-    def writePRISM_specification(self, N):
+    def writePRISM_specification(self):
         """
         Writes PRISM specification file in PCTL
         """
@@ -515,8 +518,6 @@ class PRISM_writer:
         self.write_file(specification, self.spec_filename)
 
         return specification
-
-
 
     def write_file(self, content, filename, mode="w"):
         """
@@ -552,12 +553,12 @@ class PRISM_writer:
         return optimal_policy, optimal_delta, optimal_reward
 
 
-    def solve_PRISM(java_memory=2, prism_folder="~/Downloads/prism-imc/prism"):
+    def solve_PRISM(self,java_memory=2, prism_folder="~/Downloads/prism-imc/prism"):
         """
         function for solving iMDP using PRISM
         """
         import subprocess
-        prism_file = self.filename
+        prism_file = self.prism_filename
         spec = self.spec_filename
 
         options = ' -ex -exportadv "'+self.policy_filename+'"' + \

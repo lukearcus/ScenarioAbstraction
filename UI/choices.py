@@ -1,4 +1,28 @@
 
+def noise_choice():
+    """
+    Choice of noise level, high, medium or low
+    """
+    noise_levels = ["Low", "Medium", "High"]
+    selected = False
+    while not selected:
+        selected = True
+        print("Select a noise level:")
+        for i, noise in enumerate(noise_levels):
+            print(str(i) + "- "+noise)
+        noise_sel = input()
+        try:
+            noise_int = int(noise_sel)
+        except(ValueError):
+            selected=False
+            print("Please input a numerical value matching the chosen noise level")
+        try:
+            noise = noise_levels[noise_int]
+        except(IndexError):
+            selected=False
+            print("Please select a number between 0 and "+str(len(noise_levels)-1))
+    return noise_int+1
+
 def model_choice():
     """
     Function to get model choice from user
@@ -21,14 +45,13 @@ def model_choice():
         except(IndexError):
             model_selected=False
             print("Please select a model number between 0 and "+str(len(models)-1))
-        return model
+    return model
 
 def load_choice():
     """
     Offers user option to load existing iMDP abstraction
     """
-    load_chosen=False
-    while not load_chosen:
+    while True:
         print("Load exisiting iMDP abstraction? (Y/N)")
         choice = str.upper(input())
         if choice != 'Y' and choice != 'N':

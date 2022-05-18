@@ -1,4 +1,5 @@
 old_paper.pdf
 output/
+input/
 __pycache__/
 *.pkl
