@@ -19,7 +19,6 @@ if model == "drone":
     T=1
     #test = Dynamics.Full_Drone_dryden(init, T, 4, -4, 5)
     test = Dynamics.Full_Drone_gauss(init, T, 4, -4, 0, 0.5)
-    control = np.ones((6,1))*1
     
     
     
@@ -45,13 +44,14 @@ if model == "drone":
                                        [((11,1,5, -2.25, -2.25, -2.25),(15,5,9, 2.25, 2.25, 2.25))])
 
     
-    opt_pol, opt_delta, opt_rew = run(init, test, ss,(15,9,7,3,3,3),0.25) 
-    ax = ss.draw_space([0,1,2])
     #with open('test_imdp.pkl', 'rb') as inp:
     #    test_imdp = pickle.load(inp)
-    #test_imdp.create_probs(100)
-    with open('test_imdp.pkl', 'wb') as outp:
-        pickle.dump(test_imdp, outp, pickle.HIGHEST_PROTOCOL)
+    #test_imdp = iMDP.iMDP(ss, test, (15,9,7,3,3,3))
+    opt_pol, opt_delta, opt_rew = run(init, test, ss,(15,9,7,3,3,3),0.25) 
+    ax = ss.draw_space([0,1,2])
+    #with open('test_imdp.pkl', 'wb') as outp:
+    #    pickle.dump(test_imdp, outp, pickle.HIGHEST_PROTOCOL)
+    #test_imdp.update_probs(25)
 elif model == "room":
 
     init = np.array([[19.8],[37]])
@@ -63,6 +63,7 @@ elif model == "room":
 
     plot_funcs.heatmap(opt_rew, (19,20), [36,40], [22.9,19.1])
 
+import pdb; pdb.set_trace()
 #ax = ss.draw_space()
 
 #cntrl = controller.controller(test_imdp, test)
