@@ -1,4 +1,4 @@
-import iMDP
+import main.iMDP as iMDP
 import os
 
 PRISM_MEM=12
@@ -13,11 +13,15 @@ def run(init_state, dyn, test_imdp,  grid, min_lb,init_samples=25, max_iters=20,
         output_folder = 'output/'+type(dyn).__name__+'/'+str(samples)
         if not os.path.exists(output_folder):
             os.makedirs(output_folder+'/')
+        input_folder = 'input/'+type(dyn).__name__+'/'+str(samples)
+        if not os.path.exists(output_folder):
+            os.makedirs(output_folder+'/')
         print("Writing PRISM files")
-        writer = iMDP.PRISM_writer(test_imdp, dyn.horizon, output_folder)
+        writer = iMDP.PRISM_writer(test_imdp, dyn.horizon, input_folder, output_folder)
+        writer.write()
         print("Solving iMDP")
-        policy_file, vec_file = iMDP.solve_PRISM(writer.filename, writer.specification, output_folder, PRISM_MEM)
-        opt_pol, opt_delta, rew = writer.read_results(policy_file, vec_file)
+        policy_file, vec_file = writer.solve_PRISM(PRISM_MEM)
+        opt_pol, opt_delta, rew = writer.read()
         lb_sat_prob = rew[init_id]
         print("lower bound on initial state: "+lb_sat_prob)
         i+=1

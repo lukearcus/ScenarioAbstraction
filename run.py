@@ -49,10 +49,9 @@ def get_imdp(load_sel, model):
                                                ((-1, -9, 15, -2.25, -2.25, -2.25),(3, -3, 19, 2.25, 2.25, 2.25)), # overhang
                                                ((11, -9, 5, -2.25, -2.25, -2.25),(15, -5, 7, 2.25, 2.25, 2.25)), # small last
                                                ((9, 5, 5, -2.25, -2.25, -2.25),(15, 9, 13, 2.25, 2.25, 2.25)), # next to goal
-    
                                            ],
                                            [((11,1,5, -2.25, -2.25, -2.25),(15,5,9, 2.25, 2.25, 2.25))])
-    
+
             if model == "UAV_gauss":
                 mu=0
                 sigma=0.5
@@ -60,19 +59,18 @@ def get_imdp(load_sel, model):
             else:
                 wind_speed = 5 # wind speed at 6m: 5 low, 15 medium, 30 high
                 dyn = Dynamics.Full_Drone_dryden(init, T, ub_acc, lb_acc, 5)
-    
+
         if model=="1room heating":
-    
             init = np.array([[19.8],[37]])
             dyn = Dynamics.heat_1_room(init)
             ss = StateSpace.ContStateSpace(2, ((19.1, 36), (22.9, 40)), [], [((20.9, 36), (21.1, 40)) ])
             grid = (19,20)
-    
+
         imdp_abstr = iMDP.iMDP(ss,dyn,grid)
         if save_sel == 'Y':
             with open("stored_abstractions/"+model+'_imdp.pkl', 'wb') as outp:
                 pickle.dump(imdp_abstr, outp, pickle.HIGHEST_PROTOCOL)
-        return imdp_abstr, ss, dyn 
+        return imdp_abstr, ss, dyn, init
 
 def main():
     """
@@ -81,8 +79,8 @@ def main():
     lb_sat_prob=0.25
     model = opt.model_choice()
     load_sel = opt.load_choice()
-    imdp_abstr, ss, dyn = get_imdp(load_sel, model)
-    opt_pol, opt_delta, opt_rew = run(init, test, imdp_abstr,grid,lb_sat_prob)
+    imdp_abstr, ss, dyn, init_state = get_imdp(load_sel, model)
+    opt_pol, opt_delta, opt_rew = run(init_state, dyn, imdp_abstr,grid,lb_sat_prob)
     plot_funcs.create_plots(model, opt_pol, opt_rew)
     # draw some other nice things here
     return 0
