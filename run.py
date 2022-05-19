@@ -100,12 +100,16 @@ def main():
     model = opt.model_choice()
     if model != "1room heating":
         noise_lvl = opt.noise_choice()
+    else:
+        noise_lvl=None
     load_sel = opt.load_choice()
     imdp_abstr, ss, dyn, init_state, grid = get_imdp(load_sel, model, noise_lvl)
     opt_pol, opt_delta, opt_rew = run(init_state, dyn, imdp_abstr,grid,lb_sat_prob)
     if model != "1room heating":
         ax = ss.draw_space([0,1,2])
-    plot_funcs.create_plots(model, opt_pol, opt_rew, imdp, init_state, ax)
+    else:
+        ax=None
+    plot_funcs.create_plots(model, opt_pol, opt_rew, imdp_abstr, init_state, ax)
     # draw some other nice things here
     return 0
 

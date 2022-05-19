@@ -25,7 +25,7 @@ def run(init_state, dyn, test_imdp,  grid, min_lb,init_samples=25, max_iters=20,
         lb_sat_prob = rew[init_id]
         print("lower bound on initial state: "+str(lb_sat_prob))
         i+=1
-        i=200 # so we only run 1 loop
+        #i=200 # so we only run 1 loop
         samples *= 2
     return opt_pol, opt_delta, rew
 

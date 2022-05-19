@@ -165,8 +165,8 @@ class iMDP:
                         dec_round(self.lookup_table[k,1],5)]
 
         k_deadlock = N_in[-1]
-        probs.append([dec_round(1-self.lookup_table[k,1],5),\
-                      dec_round(1-self.lookup_table[k,0],5)])
+        probs.append([max(1e-4,dec_round(1-self.lookup_table[k,1],5)),\
+                      min(1,dec_round(1-self.lookup_table[k,0],5))])
         return probs
 
     def find_state_index_with_init(self, x, start):
@@ -452,8 +452,8 @@ class PRISM_writer:
                             kprime = "&(k'=k+"+str(1) + ")"
 
                         if mode == "interval":
-                            interval_idxs = [str(i) for i in model.trans_ids]
-                            interval_idxs[-1] = ["-1"]
+                            interval_idxs = [str(i) for i in model.trans_ids[a]]
+                            interval_idxs[-1] = "-1"
 
                             interval_strings = ["[" + str(prob[0])
                                                 +","+str(prob[1])+"]" for prob in model.trans_probs[a]]
