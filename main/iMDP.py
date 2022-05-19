@@ -33,6 +33,7 @@ class iMDP:
         self.part_size = (Cont_state_space.valid_range[1]-Cont_state_space.valid_range[0])/parts
         state_start = time.perf_counter()
         self.States, self.corner_array, self.end_corners_flat = self.create_partition(min_pos, parts)
+        self.all_corners_flat = self.corner_array.reshape((-1,self.N_d))
         state_end = time.perf_counter()
         print("States set up in "+str(state_end-state_start))
         self.adj_states = self.build_adj_states() # this is slow
@@ -161,12 +162,12 @@ class iMDP:
         nonzeros = [i for i, e in enumerate(N_in[:-1]) if e != 0]
         for j in nonzeros:
             k = N-N_in[j]
-            probs[j] = [dec_round(self.lookup_table[k,0],5),\
+            probs[j] = [max(1e-4,dec_round(self.lookup_table[k,0],5)),\
                         dec_round(self.lookup_table[k,1],5)]
 
         k_deadlock = N_in[-1]
-        probs.append([max(1e-4,dec_round(1-self.lookup_table[k,1],5)),\
-                      min(1,dec_round(1-self.lookup_table[k,0],5))])
+        probs.append([max(1e-4,dec_round(1-self.lookup_table[k_deadlock,1],5)),\
+                      dec_round(1-self.lookup_table[k_deadlock,0],5)])
         return probs
 
     def find_state_index_with_init(self, x, start):
@@ -258,7 +259,7 @@ class iMDP:
         for i, u_elem in enumerate(itertools.product(*u)):
             list_elem = list(u_elem)
             x_inv_area[i,:] = (self.A_pinv @ (self.dyn.B @ np.array(list_elem) + self.dyn.Q)).flatten()
-        corners_array = self.end_corners_flat
+        corners_array = self.all_corners_flat
 
         dim_equal = self.dyn.A.shape[0] == self.dyn.B.shape[1]
         if dim_equal:
@@ -285,27 +286,15 @@ class iMDP:
         if dim_equal:
             actions = {i : [] for i in self.States if i not in self.Unsafes}
             nr_acts = len(actions)
-            if nr_acts*len(self.States)*2*n*16 <= self.MAX_MEM*8*(1024**3):
-                act_array = np.array(list(actions.keys())).T
-                A_inv_d = self.A_pinv @ act_array
-                all_vert_normed = (A_inv_d.T @ parallelo2cube)[:,np.newaxis,:].astype('float16')\
-                                    - allRegionVertices.astype('float16')
+            for act in tqdm(actions):
+                A_inv_d = self.A_pinv @ np.array(act)
+                all_vert_normed = (A_inv_d @ parallelo2cube) - allRegionVertices
 
-                poly_reshape = np.reshape(all_vert_normed, (nr_acts, len(self.States),n*2))
-                enabled_in = np.maximum(np.max(poly_reshape, axis=2), -np.min(poly_reshape, axis=2)) <= 1.0
-                for i, act in enumerate(actions):
-                    state_ids = np.where(enabled_in[i,:])[0]
-                    actions[act] = [state_id for state_id in state_ids if self.States[state_id] not in self.Unsafes]
-            else:
-                for act in tqdm(actions):
-                    A_inv_d = self.A_pinv @ np.array(act)
-                    all_vert_normed = (A_inv_d @ parallelo2cube) - allRegionVertices
-
-                    poly_reshape = np.reshape(all_vert_normed, (len(self.States),n*(2**n)))
-                    enabled_in = np.maximum(np.max(poly_reshape, axis=1), -np.min(poly_reshape, axis=1)) <= 1.0
-                    state_ids = np.where(enabled_in)[0]
-                    actions[act] = [state_id for state_id in state_ids\
-                                    if self.States[state_id] not in self.Unsafes]
+                poly_reshape = np.reshape(all_vert_normed, (len(self.States),n*(2**n)))
+                enabled_in = np.maximum(np.max(poly_reshape, axis=1), -np.min(poly_reshape, axis=1)) <= 1.0
+                state_ids = np.where(enabled_in)[0]
+                actions[act] = [state_id for state_id in state_ids\
+                                if self.States[state_id] not in self.Unsafes]
 
         else:
             actions = {i : [] for i in self.States if i not in self.Unsafes}
@@ -420,7 +409,6 @@ class PRISM_writer:
                     "\tx : [-1..regions]; \n\n",
                     ]
         self.write_file(header+variable_defs, self.prism_filename)
-
         delta = model.dyn.grouped_timesteps
         for k in range(0, N, min_delta):
 
@@ -454,7 +442,6 @@ class PRISM_writer:
                         if mode == "interval":
                             interval_idxs = [str(i) for i in model.trans_ids[a]]
                             interval_idxs[-1] = "-1"
-
                             interval_strings = ["[" + str(prob[0])
                                                 +","+str(prob[1])+"]" for prob in model.trans_probs[a]]
                             succPieces = [intv +" : (x'="+str(i)+")"+kprime
@@ -516,7 +503,6 @@ class PRISM_writer:
             else:
                 specification = 'Pmaxmin=? [ F "reached" ]'
         self.write_file(specification, self.spec_filename)
-
         return specification
 
     def write_file(self, content, filename, mode="w"):
@@ -559,7 +545,7 @@ class PRISM_writer:
         """
         import subprocess
         prism_file = self.prism_filename
-        spec = self.spec_filename
+        spec = self.specification
 
         options = ' -ex -exportadv "'+self.policy_filename+'"' + \
                   ' -exportvector "'+self.vector_filename+'"'
