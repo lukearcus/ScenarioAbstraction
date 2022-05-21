@@ -102,10 +102,10 @@ class ContStateSpace:
                 ax = plt.gca()
                 for unsafe in self.unsafes:
                     size = unsafe[1] - unsafe[0]
-                    ax.add_patch(Rectangle(unsafe[0], size[0], size[1], color='r'))
+                    ax.add_patch(Rectangle(unsafe[0], size[0], size[1], color='r', alpha=0.5))
                 for goal in self.goals:
                     size = goal[1] - goal[0]
-                    ax.add_patch(Rectangle(goal[0], size[0], size[1], color='g'))
+                    ax.add_patch(Rectangle(goal[0], size[0], size[1], color='g', alpha=0.5))
 
                 plt.xlim(self.valid_range[0][chosen_dims[0]], self.valid_range[1][chosen_dims[0]])
                 plt.ylim(self.valid_range[0][chosen_dims[1]], self.valid_range[1][chosen_dims[1]])
@@ -126,7 +126,7 @@ class ContStateSpace:
                     g.append(self.min_max_to_3d_points(goal, chosen_dims))
                     colours.append("green")
                 cubes = Poly3DCollection(np.concatenate(g),
-                            facecolors=np.repeat(colours,6), alpha=0.75)
+                            facecolors=np.repeat(colours,6), alpha=0.5)
                 ax.add_collection3d(cubes)
                 return ax
 

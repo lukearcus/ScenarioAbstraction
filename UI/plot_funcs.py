@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 from mpl_toolkits import mplot3d
+import numpy as np
 
 def create_plots(model, opt_pol, opt_rew, imdp, init, ax=None):
     """
@@ -24,12 +25,19 @@ def plot_policy(policy, init, imdp, ax=None):
     if ax is None:
         fig=plt.figure()
         ax = plt.axes(projection='3d')
-    index = imdp.find_state_index(init.T)
-    states = [imdp.States[index][:3]]
+    ind = int(imdp.find_state_index(init.T)[0][0][0])
+    x = [imdp.States[ind][0]]
+    y = [imdp.States[ind][1]]
+    z = [imdp.States[ind][2]]
     for timestep in policy:
-        index = timestep[index]
-        states.append(imdp.States[index][:3])
-    ax.plot3D(states)
+        ind = int(timestep[ind])
+        if ind == -1:
+            break
+        x += [imdp.States[ind][0]]
+        y += [imdp.States[ind][1]]
+        z += [imdp.States[ind][2]]
+    ax.plot3D(x,y,z)
+    plt.show()
 
 def drone_plot(data, T, ax=None):
     """

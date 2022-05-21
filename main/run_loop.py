@@ -22,7 +22,7 @@ def run(init_state, dyn, test_imdp,  grid, min_lb,init_samples=25, max_iters=20,
         print("Solving iMDP")
         writer.solve_PRISM(PRISM_MEM)
         opt_pol, opt_delta, rew = writer.read()
-        lb_sat_prob = rew[init_id]
+        lb_sat_prob = rew[tuple(init_id)]
         print("lower bound on initial state: "+str(lb_sat_prob))
         i+=1
         #i=200 # so we only run 1 loop

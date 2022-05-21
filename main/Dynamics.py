@@ -1,6 +1,76 @@
 import numpy as np
 import main.BAS_params as BAS_class
 
+class hybrid_dynamic_base:
+    """
+    Base class for hybdrid dynamic systems
+    """
+    horizon = 64
+    grouped_timesteps = 1
+    N_modes=-1
+    
+    def __init__(self, init_state):
+        self.state = init_state
+
+    def state_update(self):
+        """
+        update state
+        """
+        pass
+
+    def noise(self):
+        """
+        Add noise
+        """
+        pass
+
+class multi_room_heating(hybrid_dynamic_base):
+    """
+    Multiple room heating, 1 heater shared between all rooms
+    same A matrix in all modes
+    """
+
+    def __init__(self, init_state, init_mode=0, T=15, min_u=0, max_u=1, nr_rooms = 2, sigma=0.25):
+        self.state=init_state
+        self.mode=init_mode
+        self.T=T
+        self.N_modes = nr_rooms
+        u_min = [np.ones((nr_rooms,1))*min_u for i in range(nr_rooms)]
+        u_max = np.copy(u_min)
+        for i in range(nr_rooms):
+            u_max[i][i]=max_u
+        sigma = np.diag([sigma for i in range(nr_rooms)]) # assume noise is equal in all modes
+        ambient_temp = 6
+        if nr_rooms == 2:
+            a_12 = 0.022
+            b_1 = 0.0167
+            b_2 = 0.0167
+            c_1=0.8
+            c_2=0.9333
+            A = [np.array([[1-b_1, a_12],[a_12, 1-b_2]]) for i in range(nr_rooms)]
+            B = [np.array([[c_1,0],[0,0]]).T, np.array([[0,0],[0, c_2]]).T]
+            Q = [np.array([[b_1*ambient_temp, b_2*ambient_temp]]).T for i in range(nr_rooms)]
+            self.transition_matrix = np.array([[0.5, 0.5],[0.5,0.5]])
+        elif nr_rooms == 3:
+            a_12 = 0.022
+            a_13 = 0.022
+            a_23 = 0.001
+            A = [np.array([[1, a_12, a_13],[a_12, 1, a_23],[a_13, a_23, 1]]) for i in range(nr_rooms)]
+        self.individual_systems = [LTI_gauss(init_state, A[i], B[i], Q[i], u_max[i], u_min[i], sigma) for i in range(nr_rooms)]
+
+    def state_update(self, control):
+        
+        # update continuous state
+        curr_dyn = self.individual_systems[self.mode]
+        curr_dyn.state_update(control)
+        self.state = curr_dyn.state
+
+        # update discrete state
+        self.mode = np.random.choice(self.N_modes, p = self.transition_matrix[self.mode])
+        
+        # store current state in individual system state
+        self.individual_systems[self.mode].state = self.state
+
 class dynamic_base:
     """
     Base class defining dynamics
@@ -22,6 +92,43 @@ class dynamic_base:
         Add noise
         """
         pass
+
+class LTI_gauss(dynamic_base):
+    """
+    Basic LTI class which takes matrices as inputs
+    """
+    def __init__(self, init, _A, _B, _Q, _u_max, _u_min, _sigma):
+        self.A = _A
+        self.B = _B
+        self.Q = _Q
+        self.u_max = _u_max
+        self.u_min = _u_min
+        self.sigma = _sigma
+        self.state = init
+        self.mu = np.zeros(self.state.shape)
+        if _A.shape[1] <= _B.shape[1]:
+            self.A_full_rank = _A
+            self.B_full_rank = _B
+            self.grouped_timesteps=1
+        else:
+            self.grouped_timestpes = int(math.ceil(_A.shape[1]/_B.shape[1]))
+            As = []
+            Bs = []
+            for i in range(self.grouped_timesteps):
+                As += np.linalg.matrix_power(_A, i+1)
+                Bs += np.linalg.matrix_power(_A, i)*_B
+
+            As.reverse()
+            Bs.reverse()
+
+            self.A_full_rank = np.hstack(tuple(As))
+            self.B_full_rank = np.hstack(tuple(Bs))
+
+    def state_update(self, control):
+        self.state = self.A*self.state + self.B*control + self.Q + self.noise()
+
+    def noise(self):
+        return np.random.multivariate_normal(self.mu, self.sigma)
 
 class heat_1_room(dynamic_base):
     """

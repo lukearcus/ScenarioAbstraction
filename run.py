@@ -22,10 +22,7 @@ def get_imdp(load_sel, model, noise_lvl):
             print("Existing abstraction not found, proceeding to create new")
             load_sel = "N"
     if model == "UAV_gauss" or model == "UAV_dryden":
-        init_pos = np.ones((3,1))*1
-        init_pos[2] = 6
-        init_vel = np.zeros((3,1))
-        init = np.concatenate((init_pos,init_vel))
+        init = np.array([[-14, 8, 106, 0, -2, 0]]).T
         T=1
         lb_acc = -4
         ub_acc = 4
@@ -96,7 +93,7 @@ def main():
     """
     Main function for running Code
     """
-    lb_sat_prob=0.25
+    lb_sat_prob=0.5
     model = opt.model_choice()
     if model != "1room heating":
         noise_lvl = opt.noise_choice()
