@@ -18,9 +18,9 @@ def run(init_state, dyn, test_imdp,  grid, min_lb,init_samples=25, max_iters=20,
             os.makedirs(input_folder+'/')
         print("Writing PRISM files")
         writer = iMDP.PRISM_writer(test_imdp, dyn.horizon, input_folder, output_folder)
-        writer.write()
+        writer.write_explicit()
         print("Solving iMDP")
-        writer.solve_PRISM(PRISM_MEM)
+        writer.solve_PRISM_explicit(PRISM_MEM)
         opt_pol, opt_delta, rew = writer.read()
         lb_sat_prob = rew[tuple(init_id)]
         print("lower bound on initial state: "+str(lb_sat_prob))

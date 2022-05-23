@@ -47,7 +47,7 @@ class iMDP:
 
         np_incs = np.stack(([0 for i in range(self.N_d)],self.part_size)).T
         act_start = time.perf_counter()
-        self.Actions = self.determine_actions()
+        self.Actions, self.Actions_forward, self.enabled_actions = self.determine_actions()
         act_end = time.perf_counter()
         print("Actions set up in "+str(act_end-act_start))
 
@@ -122,10 +122,9 @@ class iMDP:
         """
         self.lookup_table = self.create_table(N)
         print("Finding transition probabilities")
-        enabled_actions = [act for act in self.Actions if len(self.Actions[act]) > 0]
-        probs = {act:[] for act in enabled_actions}
+        probs = {act:[] for act in self.enabled_actions}
         ids = dict(probs)
-        for action in tqdm(enabled_actions):
+        for action in tqdm(self.enabled_actions):
             ids[action], probs[action] = self.comp_bounds(self.States[action], N)
         return probs, ids
 
@@ -284,7 +283,7 @@ class iMDP:
             x_inv_hull = Delaunay(x_inv_area, qhull_options='QJ')
             allRegionVertices = corners_array
         if dim_equal:
-            actions = {i : [] for i,s in enumerate(self.States) if s not in self.Unsafes}
+            actions = {i : [] for i,s in enumerate(self.States) if i not in self.Unsafes}
             nr_acts = len(actions)
             for act in tqdm(actions):
                 A_inv_d = self.A_pinv @ np.array(self.States[act])
@@ -294,38 +293,45 @@ class iMDP:
                 enabled_in = np.maximum(np.max(poly_reshape, axis=1), -np.min(poly_reshape, axis=1)) <= 1.0
                 state_ids = np.where(enabled_in)[0]
                 actions[act] = [state_id for state_id in state_ids\
-                                if self.States[state_id] not in self.Unsafes]
+                                if state_id not in self.Unsafes]
 
         else:
-            actions = {i : [] for i,s in enumerate(self.States) if s not in self.Unsafes}
+            actions = {i : [] for i,s in enumerate(self.States) if i not in self.Unsafes}
             for act in tqdm(actions):
-                state_counter = {i: 0 for i in self.States if i not in self.Unsafes}
+                state_counter = {i: 0 for s_num, i in enumerate(self.States) if s_num not in self.Unsafes}
                 A_inv_d = self.A_pinv @ np.array(act)
                 all_vertices = A_inv_d - corners_array
                 in_hull = x_inv_hull.find_simplex(all_vertices) >= 0
                 if np.any(in_hull):
                     for val in corners_array[in_hull]:
                         for state in self.Corners_to_states[tuple(val)]:
-                            if state not in self.Unsafes:
+                            if self.States.index(state) not in self.Unsafes:
                                 state_counter[state]+=1
                                 if state_counter[state] == 2**self.N_d:
                                     actions[act].append(state)
                 state_ids = np.where(enabled_in)[0]
-                actions[act] = [state_id for state_id in state_ids if self.States[state_id] not in self.Unsafes]
-        return actions
+                actions[act] = [state_id for state_id in state_ids if state_id not in self.Unsafes]
+        actions_forward = {i : [] for i, s in enumerate(self.States) if i not in self.Unsafes}
+        for s in actions_forward:
+            for act in actions:
+                if s in actions[act]:
+                    actions_forward[s].append(act)
+        
+        enabled = [act for act in actions if len(actions[act]) > 0]
+        return actions, actions_forward, enabled
 
     def find_unsafes(self):
         """
         Finds all iMDP states that have a centre in unsafe region
         """
-        unsafes = [state for state in self.States if not self.ss.check_safe(state)]
+        unsafes = [i for i, state in enumerate(self.States) if not self.ss.check_safe(state)]
         return unsafes
 
     def find_goals(self):
         """
         checks if centre of state is a goal region
         """
-        goals = [state for state in self.States if self.ss.check_goal(state)]
+        goals = [i for i, state in enumerate(self.States) if self.ss.check_goal(state)]
         return goals
 
 class MDP(iMDP):
@@ -376,12 +382,112 @@ class PRISM_writer:
             self.horizon = str(N) + "_steps"
         else:
             self.horizon = _horizon
-        self.prism_filename = input_folder + "/ScenAbs_"+_mode + "_" + _horizon + ".prism"
-        self.spec_filename = input_folder + "/ScenAbs_"+_mode + "_" + _horizon + ".pctl"
+        input_prefix = input_folder + "/ScenAbs_"+_mode + "_" + _horizon 
+        self.prism_filename = input_prefix + ".prism"
+        self.spec_filename = input_prefix + ".pctl"
+        
+        self.state_filename = input_prefix + ".sta"
+        self.label_filename = input_prefix + ".lab"
+        self.transition_filename = input_prefix + ".tra"
+        self.all_filename = input_prefix + ".all"
+
         file_prefix = output_folder + "/PRISM_out"
         self.vector_filename = file_prefix + "_vector.csv"
         self.policy_filename = file_prefix + "_policy.csv"
 
+    def write_explicit(self):
+        state_string = '\n'.join(['(x)\n0:(-1)'] + [str(i+1)+':('+str(i)+')'\
+                                                    for i in range(len(self.model.States))])
+        self.write_file(state_string, self.state_filename)
+        
+        label_file_list = ['0="init" 1="deadlock" 2="reached"']+\
+                          ['0: 1']
+
+        substring = ['' for i in self.model.States]
+        for i, s in enumerate(self.model.States):
+            substring[i] = str(i+1)+': 0'
+
+            if len(self.model.Actions_forward[i]) == 0:
+                substring[i] += ' 1'
+        
+        for i in self.model.Goals:
+            substring[i] += ' 2'
+
+        label_file_list += substring
+
+        label_file_string = '\n'.join(label_file_list)
+
+        self.write_file(label_file_string, self.label_filename)
+        
+        nr_choices_absolute = 0
+        nr_transitions_absolute = 0
+        transition_file_list = ['' for i in self.model.States]
+
+        for i, s in enumerate(tqdm(self.model.States)):
+            choice = 0
+            selfloop = False
+            if len(self.model.Actions_forward[i]) > 0:
+                subsubstring = ['' for j in self.model.Actions_forward[i]]
+
+                for a_idx, a in enumerate(self.model.Actions_forward[i]):
+                    action_label = "a_"+str(a)+"_d_"+str(self.model.dyn.grouped_timesteps)
+                    substring_start = str(i+1) + ' '+str(choice)
+                    if self.mode == "interval":
+                        interval_idxs = [j for j in self.model.trans_ids[a]]
+                        interval_strings = ["[" + str(prob[0])
+                                            +","+str(prob[1])+"]" for prob in self.model.trans_probs[a]]
+                        deadlock_string = interval_strings.pop(-1)
+                        subsubstring_a = [substring_start+' 0 '+deadlock_string+' '+action_label]
+                        subsubstring_b = [substring_start+" "+str(j+1)+" "+intv+" "+action_label
+                                            for (j, intv) in zip(interval_idxs, interval_strings)]
+                    else:
+                        raise NotImplementedError
+
+                choice += 1
+                nr_choices_absolute += 1
+                nr_transitions_absolute += len(subsubstring_a) + len(subsubstring_b)
+
+                subsubstring[a_idx] = '\n'.join(subsubstring_a + subsubstring_b)
+            else:
+                if not selfloop:
+                    if self.mode == 'interval':
+                        selfloop_prob='[1.0,1.0]'
+                    else:
+                        selfloop_prob= '1.0'
+                    subsubstring = [str(i+1) + ' 0 '+str(i+1)+' '+selfloop_prob]
+
+                    selfloop = True
+
+                    nr_choices_absolute += 1
+                    choice += 1
+                    nr_transitions_absolute += 1
+                else:
+                    subsubstring = []
+            substring = [subsubstring]
+            transition_file_list[i] = substring
+
+        flatten = lambda t: [item for sublist in t
+                                  for subsublist in sublist
+                                  for item in subsublist]
+        transition_file_list = '\n'.join(flatten(transition_file_list))
+
+        size_states = len(self.model.States) + 1
+        size_choices = nr_choices_absolute + 1
+        size_transitions = nr_transitions_absolute + 1
+
+        model_size = {'States': size_states,
+                      'Choices': size_choices,
+                      'Transitions':size_transitions}
+        header = str(size_states)+' '+str(size_choices)+' '+str(size_transitions)+'\n'
+
+        if self.mode == 'interval':
+            firstrow = '0 0 0 [1.0,1.0]\n'
+        else:
+            firstrow = '0 0 0 1.0\n'
+
+        self.write_file(header+firstrow+transition_file_list, self.transition_filename)
+
+        self.specification = self.writePRISM_specification()
 
     def write(self):
         """
@@ -484,7 +590,7 @@ class PRISM_writer:
                 "init k=0 endinit \n\n"
                 ]
 
-        labelPieces = ["(x="+str(model.States.index(x))+")" for x in model.Goals]
+        labelPieces = ["(x="+str(x)+")" for x in model.Goals]
         sep = "|"
         labelGuard = sep.join(labelPieces)
         labels = [
@@ -553,6 +659,17 @@ class PRISM_writer:
                     optimal_delta[i,j] = -1
         return optimal_policy, optimal_delta, optimal_reward
 
+    def solve_PRISM_explicit(self,java_memory=2,prism_folder="~/Downloads/prism-imc/prism"):
+        import subprocess
+        model_file = '"'+self.all_filename+'"'
+        spec = self.specification
+        options = ' -ex -exportadv "'+self.policy_filename+'"' + \
+                  ' -exportvector "'+self.vector_filename+'"'
+        command = prism_folder+"/bin/prism -javamaxmem "+ \
+            str(java_memory)+"g -importmodel "+model_file+" -pf '"+ \
+            spec+"' "+options
+
+        subprocess.Popen(command, shell=True).wait()
 
     def solve_PRISM(self,java_memory=2, prism_folder="~/Downloads/prism-imc/prism"):
         """
@@ -685,7 +802,7 @@ class hybrid_PRISM_writer(PRISM_writer):
                 "init k=0 endinit \n\n"
                 ]
 
-        labelPieces = ["(x="+str(model.iMDPs[0].States.index(x))+")"\
+        labelPieces = ["(x="+str(x)+")"\
                        for x in model.iMDPs[0].Goals] #assume shared goal
         sep = "|"
         labelGuard = sep.join(labelPieces)

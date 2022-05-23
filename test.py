@@ -12,9 +12,9 @@ import main.iMDP
 init_state = np.array([[10,10]]).T
 hybrid_dyn = main.Dynamics.multi_room_heating(init_state)
 hybrid_ss = main.StateSpace.ContStateSpace(2, ((15, 15), (25, 25)), [], [((20, 20), (22, 22)) ])
-hybrid_imdp = main.iMDP.hybrid_iMDP(hybrid_ss,hybrid_dyn,(20,20))
+hybrid_imdp = main.iMDP.hybrid_iMDP(hybrid_ss,hybrid_dyn,(40,40))
 
-samples = 800
+samples = 25
 hybrid_imdp.update_probs(samples)
 
 
@@ -28,4 +28,8 @@ writer=main.iMDP.hybrid_PRISM_writer(hybrid_imdp, hybrid_dyn.horizon, input_fold
 writer.write()
 writer.solve_PRISM(12)
 opt_pol, opt_delta, rew = writer.read()
-import pdb; pdb.set_trace()
+
+fig, axs = plt.subplots(2)
+axs[0].imshow(rew[2:3202:2].reshape(40,40), extent=[15,25,25,15])
+axs[1].imshow(rew[3:3202:2].reshape(40,40), extent=[15,25,25,15])
+plt.show()

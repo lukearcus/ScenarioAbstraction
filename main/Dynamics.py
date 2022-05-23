@@ -29,14 +29,14 @@ class multi_room_heating(hybrid_dynamic_base):
     Multiple room heating, 1 heater shared between all rooms
     same A matrix in all modes
     """
-
+    horizon=32
     def __init__(self, init_state, init_mode=0, T=15, min_u=0, max_u=1, nr_rooms = 2, sigma=0.25):
         self.state=init_state
         self.mode=init_mode
         self.T=T
         self.N_modes = nr_rooms
         u_min = [np.ones((nr_rooms,1))*min_u for i in range(nr_rooms)]
-        u_max = np.copy(u_min)
+        u_max = [np.zeros((nr_rooms,1)) for i in range(nr_rooms)]
         for i in range(nr_rooms):
             u_max[i][i]=max_u
         sigma = np.diag([sigma for i in range(nr_rooms)]) # assume noise is equal in all modes
@@ -47,10 +47,10 @@ class multi_room_heating(hybrid_dynamic_base):
             b_2 = 0.0167
             c_1=0.8
             c_2=0.9333
-            A = [np.array([[1-b_1, a_12],[a_12, 1-b_2]]) for i in range(nr_rooms)]
+            A = [np.array([[1-b_1-a_12, a_12],[a_12, 1-b_2-a_12]]) for i in range(nr_rooms)]
             B = [np.array([[c_1,0],[0,0]]).T, np.array([[0,0],[0, c_2]]).T]
             Q = [np.array([[b_1*ambient_temp, b_2*ambient_temp]]).T for i in range(nr_rooms)]
-            self.transition_matrix = np.array([[0.5, 0.5],[0.5,0.5]])
+            self.transition_matrix = np.array([[0.0, 1.0],[1.0,0.0]])
         elif nr_rooms == 3:
             a_12 = 0.022
             a_13 = 0.022
