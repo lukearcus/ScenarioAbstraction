@@ -24,7 +24,7 @@ if not os.path.exists(output_folder):
 input_folder = 'input/'+type(hybrid_dyn).__name__+'/'+str(samples)
 if not os.path.exists(input_folder):
     os.makedirs(input_folder+'/')
-writer=main.iMDP.hybrid_PRISM_writer(hybrid_imdp, hybrid_dyn.horizon, input_folder, output_folder)
+writer=main.iMDP.hybrid_PRISM_writer(hybrid_imdp, hybrid_dyn.horizon, input_folder, output_folder, True)
 writer.write()
 writer.solve_PRISM(12)
 opt_pol, opt_delta, rew = writer.read()

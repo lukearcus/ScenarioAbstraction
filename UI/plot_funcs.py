@@ -10,6 +10,12 @@ def create_plots(model, opt_pol, opt_rew, imdp, init, ax=None):
         heatmap(opt_rew, (19,20), [36,40], [22.9,19.1], ax)
     if model=="UAV_gauss" or model=="UAV_dryden":
         plot_policy(opt_pol, init, imdp, ax)
+    if model=="n_room_heating":
+        nr_rooms = len(imdp.iMDPs)
+        nr_states = len(imdp.iMDPs[0].States)+1
+        fig, axs = plt.subplots(1, nr_rooms)
+        for i in range(nr_rooms):
+            axs[i] = heatmap(opt_rew[nr_states*i:nr_states*(i+1)], (40,40), [15,25], [25,15], axs[i])
     plt.show()
 
 def heatmap(rewards, grid,xlim,ylim, ax=None):
@@ -20,6 +26,7 @@ def heatmap(rewards, grid,xlim,ylim, ax=None):
         fig=plt.figure()
         ax=plt.axes()
     ax.imshow(rewards[1:].reshape(grid), extent=xlim+ylim) 
+    return ax
 
 def plot_policy(policy, init, imdp, ax=None):
     if ax is None:
@@ -37,7 +44,6 @@ def plot_policy(policy, init, imdp, ax=None):
         y += [imdp.States[ind][1]]
         z += [imdp.States[ind][2]]
     ax.plot3D(x,y,z)
-    plt.show()
 
 def drone_plot(data, T, ax=None):
     """

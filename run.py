@@ -14,9 +14,14 @@ def get_imdp(load_sel, model, noise_lvl):
     Either loads or creates a fresh iMDP abstraction based on chosen model
     Then saves based on users preference (if generating a fresh abstraction)
     """
+    if model == "n_room_heating":
+        nr_rooms = opt.rooms_choice()
+        model_name = model+"_"+str(nr_rooms)
+    else:
+        model_name = model
     if load_sel == 'Y':
         try:
-            with open("stored_abstractions/"+model + '_imdp.pkl', 'rb') as inp:
+            with open("stored_abstractions/"+model_name + '_imdp.pkl', 'rb') as inp:
                 imdp_abstr = pickle.load(inp)
         except(FileNotFoundError):
             print("Existing abstraction not found, proceeding to create new")
@@ -81,11 +86,22 @@ def get_imdp(load_sel, model, noise_lvl):
         dyn = Dynamics.heat_1_room(init)
         ss = StateSpace.ContStateSpace(2, ((19.1, 36), (22.9, 40)), [], [((20.9, 36), (21.1, 40)) ])
         grid = (19,20)
+    if model=="n_room_heating":
+        if nr_rooms == 2:
+            init = np.array([[10,10]]).T
+            dyn = Dynamics.multi_room_heating(init)
+            ss = StateSpace.ContStateSpace(nr_rooms, ((15, 15), (25, 25)), [], [((20, 20), (22, 22)) ])
+            grid=(40,40)
+        else:
+            raise NotImplementedError
+
     if load_sel == "N":
+        if dyn.hybrid == False:
+            dyn = Dynamics.single_hybrid(dyn) # can make single system into a hybrid with 1 discrete mode
         save_sel = opt.save_choice()
-        imdp_abstr = iMDP.iMDP(ss,dyn,grid)
+        imdp_abstr = iMDP.hybrid_iMDP(ss,dyn,grid)
         if save_sel == 'Y':
-            with open("stored_abstractions/"+model+'_imdp.pkl', 'wb') as outp:
+            with open("stored_abstractions/"+model_name+'_imdp.pkl', 'wb') as outp:
                 pickle.dump(imdp_abstr, outp, pickle.HIGHEST_PROTOCOL)
     return imdp_abstr, ss, dyn, init, grid
 
@@ -95,14 +111,14 @@ def main():
     """
     lb_sat_prob=0.5
     model = opt.model_choice()
-    if model != "1room heating":
+    if model != "1room heating" and model != 'n_room_heating':
         noise_lvl = opt.noise_choice()
     else:
         noise_lvl=None
     load_sel = opt.load_choice()
     imdp_abstr, ss, dyn, init_state, grid = get_imdp(load_sel, model, noise_lvl)
-    opt_pol, opt_delta, opt_rew = run(init_state, dyn, imdp_abstr,grid,lb_sat_prob)
-    if model != "1room heating":
+    opt_pol, opt_delta, opt_rew = run(init_state, dyn, imdp_abstr,grid,lb_sat_prob, max_samples=200)
+    if model == "UAV_gauss" or model=="UAV_dryden":
         ax = ss.draw_space([0,1,2])
     else:
         ax=None

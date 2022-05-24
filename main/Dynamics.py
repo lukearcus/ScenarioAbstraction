@@ -8,6 +8,7 @@ class hybrid_dynamic_base:
     horizon = 64
     grouped_timesteps = 1
     N_modes=-1
+    hybrid = True
     
     def __init__(self, init_state):
         self.state = init_state
@@ -23,6 +24,20 @@ class hybrid_dynamic_base:
         Add noise
         """
         pass
+
+class single_hybrid(hybrid_dynamic_base):
+
+    def __init__(self, system):
+        self.individual_systems = [system]
+        self.state = system.state
+        self.N_modes = 1
+        self.T=system.T
+        self.mode = 0
+        self.transition_matrix = np.array([[1]])
+    
+    def state_update(self, control):
+        self.individual_systems[0].state_update(control)
+        self.state = self.individual_systems[0].state
 
 class multi_room_heating(hybrid_dynamic_base):
     """
@@ -50,7 +65,7 @@ class multi_room_heating(hybrid_dynamic_base):
             A = [np.array([[1-b_1-a_12, a_12],[a_12, 1-b_2-a_12]]) for i in range(nr_rooms)]
             B = [np.array([[c_1,0],[0,0]]).T, np.array([[0,0],[0, c_2]]).T]
             Q = [np.array([[b_1*ambient_temp, b_2*ambient_temp]]).T for i in range(nr_rooms)]
-            self.transition_matrix = np.array([[0.0, 1.0],[1.0,0.0]])
+            self.transition_matrix = np.array([[0.5, 0.5],[0.5,0.5]])
         elif nr_rooms == 3:
             a_12 = 0.022
             a_13 = 0.022
@@ -75,6 +90,7 @@ class dynamic_base:
     """
     Base class defining dynamics
     """
+    hybrid=False
     horizon = 64
     grouped_timesteps = 1
     Q = 0

@@ -23,6 +23,21 @@ def noise_choice():
             print("Please select a number between 0 and "+str(len(noise_levels)-1))
     return noise_int+1
 
+def rooms_choice():
+    """
+    Function to get number of rooms from user
+    """
+    rooms_selected = False
+    while not rooms_selected:
+        print("Type a number of rooms between 1 and 10")
+        rooms_sel = input()
+        try:
+            rooms_int = int(rooms_sel)
+            if rooms_int > 0 and rooms_int < 11:
+                return rooms_int
+        except(ValueError):
+            print("Please select a number between 1 and 10")
+
 def model_choice():
     """
     Function to get model choice from user
@@ -30,21 +45,21 @@ def model_choice():
     model_selected = False
     while not model_selected:
         print("Select a model:")
-        models = ["UAV_gauss", "UAV_dryden", "1room heating"]
+        models = ["UAV_gauss", "UAV_dryden", "1room heating","n_room_heating"]
         for i, model in enumerate(models):
             print(str(i) + "- "+model)
         model_sel = input()
         model_selected=True
         try:
             model_int = int(model_sel)
+            try:
+                model = models[model_int]
+            except(IndexError):
+                model_selected=False
+                print("Please select a model number between 0 and "+str(len(models)-1))
         except(ValueError):
             model_selected=False
             print("Please input a numerical value matching the chosen model")
-        try:
-            model = models[model_int]
-        except(IndexError):
-            model_selected=False
-            print("Please select a model number between 0 and "+str(len(models)-1))
     return model
 
 def load_choice():

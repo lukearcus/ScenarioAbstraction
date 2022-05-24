@@ -282,22 +282,23 @@ class iMDP:
         else:
             x_inv_hull = Delaunay(x_inv_area, qhull_options='QJ')
             allRegionVertices = corners_array
+        actions_forward = {i : [] for i, s in enumerate(self.States) if i not in self.Unsafes}
+        actions_inv = {i : [] for i,s in enumerate(self.States) if i not in self.Unsafes}
         if dim_equal:
-            actions = {i : [] for i,s in enumerate(self.States) if i not in self.Unsafes}
-            nr_acts = len(actions)
-            for act in tqdm(actions):
+            nr_acts = len(actions_inv)
+            for act in tqdm(actions_inv):
                 A_inv_d = self.A_pinv @ np.array(self.States[act])
                 all_vert_normed = (A_inv_d @ parallelo2cube) - allRegionVertices
 
                 poly_reshape = np.reshape(all_vert_normed, (len(self.States),n*(2**n)))
                 enabled_in = np.maximum(np.max(poly_reshape, axis=1), -np.min(poly_reshape, axis=1)) <= 1.0
                 state_ids = np.where(enabled_in)[0]
-                actions[act] = [state_id for state_id in state_ids\
+                actions_inv[act] = [state_id for state_id in state_ids\
                                 if state_id not in self.Unsafes]
-
+                for state_id in actions_inv[act]:
+                    actions_forward[state_id].append(act)
         else:
-            actions = {i : [] for i,s in enumerate(self.States) if i not in self.Unsafes}
-            for act in tqdm(actions):
+            for act in tqdm(actions_inv):
                 state_counter = {i: 0 for s_num, i in enumerate(self.States) if s_num not in self.Unsafes}
                 A_inv_d = self.A_pinv @ np.array(act)
                 all_vertices = A_inv_d - corners_array
@@ -310,15 +311,10 @@ class iMDP:
                                 if state_counter[state] == 2**self.N_d:
                                     actions[act].append(state)
                 state_ids = np.where(enabled_in)[0]
-                actions[act] = [state_id for state_id in state_ids if state_id not in self.Unsafes]
-        actions_forward = {i : [] for i, s in enumerate(self.States) if i not in self.Unsafes}
-        for s in actions_forward:
-            for act in actions:
-                if s in actions[act]:
-                    actions_forward[s].append(act)
-        
-        enabled = [act for act in actions if len(actions[act]) > 0]
-        return actions, actions_forward, enabled
+                actions_inv[act] = [state_id for state_id in state_ids if state_id not in self.Unsafes]
+         
+        enabled = [act for act in actions_inv if len(actions_inv[act]) > 0]
+        return actions_inv, actions_forward, enabled
 
     def find_unsafes(self):
         """
@@ -364,6 +360,9 @@ class hybrid_iMDP:
         self.mode_probs = Dynamics.transition_matrix
         self.N_modes = Dynamics.N_modes
 
+    def find_state_index(self, x):
+        return self.iMDPs[0].find_state_index(x)
+
     def update_probs(self, N):
         for imdp in self.iMDPs:
             imdp.update_probs(N) 
@@ -374,9 +373,10 @@ class PRISM_writer:
     """
     Class for creating PRISM files
     """
-    def __init__(self, _model, _N=-1, input_folder='input', output_folder='output', _mode="interval", _horizon="infinite"):
+    def __init__(self, _model, _N=-1, input_folder='input', output_folder='output', _explicit=False, _mode="interval", _horizon="infinite"):
         self.mode = _mode
         self.model = _model
+        self.explicit = _explicit
         self.N = _N
         if _horizon != "infinite":
             self.horizon = str(N) + "_steps"
@@ -395,236 +395,11 @@ class PRISM_writer:
         self.vector_filename = file_prefix + "_vector.csv"
         self.policy_filename = file_prefix + "_policy.csv"
 
-    def write_explicit(self):
-        state_string = '\n'.join(['(x)\n0:(-1)'] + [str(i+1)+':('+str(i)+')'\
-                                                    for i in range(len(self.model.States))])
-        self.write_file(state_string, self.state_filename)
-        
-        label_file_list = ['0="init" 1="deadlock" 2="reached"']+\
-                          ['0: 1']
-
-        substring = ['' for i in self.model.States]
-        for i, s in enumerate(self.model.States):
-            substring[i] = str(i+1)+': 0'
-
-            if len(self.model.Actions_forward[i]) == 0:
-                substring[i] += ' 1'
-        
-        for i in self.model.Goals:
-            substring[i] += ' 2'
-
-        label_file_list += substring
-
-        label_file_string = '\n'.join(label_file_list)
-
-        self.write_file(label_file_string, self.label_filename)
-        
-        nr_choices_absolute = 0
-        nr_transitions_absolute = 0
-        transition_file_list = ['' for i in self.model.States]
-
-        for i, s in enumerate(tqdm(self.model.States)):
-            choice = 0
-            selfloop = False
-            if len(self.model.Actions_forward[i]) > 0:
-                subsubstring = ['' for j in self.model.Actions_forward[i]]
-
-                for a_idx, a in enumerate(self.model.Actions_forward[i]):
-                    action_label = "a_"+str(a)+"_d_"+str(self.model.dyn.grouped_timesteps)
-                    substring_start = str(i+1) + ' '+str(choice)
-                    if self.mode == "interval":
-                        interval_idxs = [j for j in self.model.trans_ids[a]]
-                        interval_strings = ["[" + str(prob[0])
-                                            +","+str(prob[1])+"]" for prob in self.model.trans_probs[a]]
-                        deadlock_string = interval_strings.pop(-1)
-                        subsubstring_a = [substring_start+' 0 '+deadlock_string+' '+action_label]
-                        subsubstring_b = [substring_start+" "+str(j+1)+" "+intv+" "+action_label
-                                            for (j, intv) in zip(interval_idxs, interval_strings)]
-                    else:
-                        raise NotImplementedError
-
-                choice += 1
-                nr_choices_absolute += 1
-                nr_transitions_absolute += len(subsubstring_a) + len(subsubstring_b)
-
-                subsubstring[a_idx] = '\n'.join(subsubstring_a + subsubstring_b)
-            else:
-                if not selfloop:
-                    if self.mode == 'interval':
-                        selfloop_prob='[1.0,1.0]'
-                    else:
-                        selfloop_prob= '1.0'
-                    subsubstring = [str(i+1) + ' 0 '+str(i+1)+' '+selfloop_prob]
-
-                    selfloop = True
-
-                    nr_choices_absolute += 1
-                    choice += 1
-                    nr_transitions_absolute += 1
-                else:
-                    subsubstring = []
-            substring = [subsubstring]
-            transition_file_list[i] = substring
-
-        flatten = lambda t: [item for sublist in t
-                                  for subsublist in sublist
-                                  for item in subsublist]
-        transition_file_list = '\n'.join(flatten(transition_file_list))
-
-        size_states = len(self.model.States) + 1
-        size_choices = nr_choices_absolute + 1
-        size_transitions = nr_transitions_absolute + 1
-
-        model_size = {'States': size_states,
-                      'Choices': size_choices,
-                      'Transitions':size_transitions}
-        header = str(size_states)+' '+str(size_choices)+' '+str(size_transitions)+'\n'
-
-        if self.mode == 'interval':
-            firstrow = '0 0 0 [1.0,1.0]\n'
-        else:
-            firstrow = '0 0 0 1.0\n'
-
-        self.write_file(header+firstrow+transition_file_list, self.transition_filename)
-
-        self.specification = self.writePRISM_specification()
-
     def write(self):
-        """
-        Writes .prism and .pctl file for abstraction, then stores the filenames
-        """
-        N = self.N
-        model = self.model
-        horizon = self.horizon
-        mode = self.mode
-        if horizon != "infinite":
-            horizon = str(N) + "_steps"
-
-        if horizon == "infinite":
-            min_delta = N
-            modeltype = type(model).__name__
-            header = [
-                "// "+modeltype+" (filter-based abstraction method) \n",
-                "// Infinite horizon version \n\n"
-                "mdp \n\n",
-                # "const int xInit; \n\n",
-                "const int regions = "+str(int(len(model.States)-1))+"; \n\n",
-                "module "+modeltype+"_abstraction \n\n",
-                ]
-
-            # Define variables in module
-            variable_defs = [
-                "\tx : [-1..regions]; \n\n",
-                ]
+        if self.explicit:
+            self._write_explicit()
         else:
-            min_delta = model.dyn.grouped_timesteps
-            header = [
-                    "// " + type(model).__name__ + " (scenario-based abstraction method) \n\n",
-                    "mdp \n\n",
-                    "const int Nhor = " + str(int(N/model.dyn.grouped_timesteps)) + "; \n",
-                    "const int regions = " + str(int(len(model.States)-1)) + "; \n\n", #maybe -1?
-                    "module iMDP \n\n",
-                    ]
-            variable_defs = [
-                    "\tk : [0..Nhor]; \n",
-                    "\tx : [-1..regions]; \n\n",
-                    ]
-        self.write_file(header+variable_defs, self.prism_filename)
-        delta = model.dyn.grouped_timesteps
-        for k in range(0, N, min_delta):
-
-            if horizon == 'finite':
-                action_defs += ["\t// Actions for k="+str(k)+"\n"]
-            else:
-                action_defs = []
-
-            action_defs += ["\t// Delta="+str(delta) + "\n"]
-
-            bool_cont = k % delta == 0
-
-            if (k + delta <= N and bool_cont) or horizon == 'infinite':
-
-                for a_num, a in enumerate(tqdm(model.Actions)):
-                    actionLabel = "[a_"+str(a)+"_d_"+str(delta)+"]"
-                    enabledIn = model.Actions[a]
-
-                    if len(enabledIn) > 0:
-                        guardPieces = ["x="+str(state) for state in  enabledIn]
-                        sep = " | "
-
-                        if horizon == "infinite":
-                            guard = sep.join(guardPieces)
-                            kprime = ""
-                        else:
-                            guardStates = sep.join(guardPieces)
-                            guard = "k="+str(int(k/min_delta)) + " & ("+guardStates+")"
-                            kprime = "&(k'=k+"+str(1) + ")"
-
-                        if mode == "interval":
-                            interval_idxs = [str(i) for i in model.trans_ids[a]]
-                            interval_idxs[-1] = "-1"
-                            interval_strings = ["[" + str(prob[0])
-                                                +","+str(prob[1])+"]" for prob in model.trans_probs[a]]
-                            succPieces = [intv +" : (x'="+str(i)+")"+kprime
-                                          for (i,intv) in zip(interval_idxs, interval_strings)]
-                        else:
-                            raise NotImplementedError
-
-                        sep = " + "
-                        successors = sep.join(succPieces)
-
-                        action_defs += "\t"+actionLabel+" " + guard + \
-                                       " -> " + successors + "; \n"
-
-            action_defs += ["\n\n"]
-            self.write_file(action_defs, self.prism_filename, "a")
-
-        if horizon == "infinite":
-            footer = [
-                "endmodule \n\n",
-                "init x > -1 endinit \n\n"
-                ]
-        else:
-            footer = [
-                "endmodule \n\n",
-                "init k=0 endinit \n\n"
-                ]
-
-        labelPieces = ["(x="+str(x)+")" for x in model.Goals]
-        sep = "|"
-        labelGuard = sep.join(labelPieces)
-        labels = [
-            "// Labels \n",
-            "label \"reached\" = " + labelGuard+"; \n"
-            ]
-
-        self.write_file(footer + labels, self.prism_filename, "a")
-
-        self.specification = self.writePRISM_specification()
-
-        print("Succesfully exported PRISM file")
-
-    def writePRISM_specification(self):
-        """
-        Writes PRISM specification file in PCTL
-        """
-        N = self.N
-        mode = self.mode
-        model = self.model
-        horizon = self.horizon
-        if horizon == "infinite":
-            horizonLen = int(N/model.dyn.grouped_timesteps)
-            if mode == "estimate":
-                specification = "Pmax=? [ F<="+str(horizonLen)+' "reached" ]'
-            else:
-                specification = "Pmaxmin=? [ F<="+str(horizonLen)+' "reached" ]'
-        else:
-            if mode == "estimate":
-                specification = 'Pmax=? [ F "reached" ]'
-            else:
-                specification = 'Pmaxmin=? [ F "reached" ]'
-        self.write_file(specification, self.spec_filename)
-        return specification
+            self._write()
 
     def write_file(self, content, filename, mode="w"):
         """
@@ -659,32 +434,27 @@ class PRISM_writer:
                     optimal_delta[i,j] = -1
         return optimal_policy, optimal_delta, optimal_reward
 
-    def solve_PRISM_explicit(self,java_memory=2,prism_folder="~/Downloads/prism-imc/prism"):
-        import subprocess
-        model_file = '"'+self.all_filename+'"'
-        spec = self.specification
-        options = ' -ex -exportadv "'+self.policy_filename+'"' + \
-                  ' -exportvector "'+self.vector_filename+'"'
-        command = prism_folder+"/bin/prism -javamaxmem "+ \
-            str(java_memory)+"g -importmodel "+model_file+" -pf '"+ \
-            spec+"' "+options
-
-        subprocess.Popen(command, shell=True).wait()
-
     def solve_PRISM(self,java_memory=2, prism_folder="~/Downloads/prism-imc/prism"):
         """
         function for solving iMDP using PRISM
         """
         import subprocess
-        prism_file = self.prism_filename
         spec = self.specification
 
         options = ' -ex -exportadv "'+self.policy_filename+'"' + \
                   ' -exportvector "'+self.vector_filename+'"'
 
-        model_file = '"'+prism_file+'"'
-        command = prism_folder + "/bin/prism -javamaxmem " + \
-                  str(java_memory) + "g "+model_file+" -pf '"+spec+"' "+options
+        if self.explicit:
+            model_file = '"'+self.all_filename+'"'
+            command = prism_folder+"/bin/prism -javamaxmem "+ \
+                str(java_memory)+"g -importmodel "+model_file+" -pf '"+ \
+                spec+"' "+options
+        else:
+            prism_file = self.prism_filename
+            model_file = '"'+prism_file+'"'
+
+            command = prism_folder + "/bin/prism -javamaxmem " + \
+                    str(java_memory) + "g "+model_file+" -pf '"+spec+"' "+options
         subprocess.Popen(command, shell=True).wait()
 
 
@@ -692,8 +462,125 @@ class hybrid_PRISM_writer(PRISM_writer):
     """
     Class for dealing with hybrid formulations in PRISM
     """
+    
+    def _write_explicit(self):
+        state_list = ['(x,m)']
+        counter=0
+        for m_num, m in enumerate(self.model.iMDPs):
+            state_list += [str(counter)+':(-1,'+str(m_num)+')']
+            state_list += [str(counter+i+1)+':('+str(i)+','+str(m_num)+')'\
+                             for i in range(len(m.States))]
+            counter += len(m.States)+1
+        
+        state_string = '\n'.join(state_list)
+        
+        self.write_file(state_string, self.state_filename)
+        
+        label_file_list = ['0="init" 1="deadlock" 2="reached"']
 
-    def write(self):
+        counter = 0
+        for m_num, m in enumerate(self.model.iMDPs):
+            substring = [str(counter)+': 1']
+            substring += ['' for i in m.States]
+            for i, s in enumerate(m.States):
+                substring[i+1] = str(counter+i+1)+': 0'
+
+                if len(m.Actions_forward[i]) == 0:
+                    substring[i+1] += ' 1'
+            
+            for i in m.Goals:
+                substring[i+1] += ' 2'
+
+            label_file_list += substring
+            counter += len(m.States)+1
+
+        label_file_string = '\n'.join(label_file_list)
+
+        self.write_file(label_file_string, self.label_filename)
+        
+        nr_choices_absolute = 0
+        nr_transitions_absolute = 0
+        transition_file_list = []
+        counter = 0
+        for m_num, m in enumerate(self.model.iMDPs):
+            transition_file_list_states = ['' for i in m.States]
+            for i, s in enumerate(tqdm(m.States)):
+                choice = 0
+                selfloop = False
+                #import pdb; pdb.set_trace()
+                if len(m.Actions_forward[i]) > 0:
+                    subsubstring = ['' for j in m.Actions_forward[i]]
+
+                    for a_idx, a in enumerate(m.Actions_forward[i]):
+                        action_label = "a_"+str(a)+"_d_"+str(m.dyn.grouped_timesteps)+"_m_"+str(m_num)
+                        count_inn = 0
+                        subsublist = []
+                        for m_num_inn, m_inn in enumerate(self.model.iMDPs):
+                            substring_start = str(counter+i+1) + ' '+str(choice)
+                            if self.mode == "interval":
+                                mode_prob = self.model.mode_probs[m_num, m_num_inn]
+                                if mode_prob !=  0.0:
+                                    interval_idxs = [j for j in m.trans_ids[a]]
+                                    interval_strings = ["[" + str(prob[0]*mode_prob)
+                                                        +","+str(prob[1]*mode_prob)+"]" for prob in m.trans_probs[a]]
+                                    deadlock_string = interval_strings.pop(-1)
+                                    subsubstring_a = [substring_start+' ' + str(count_inn) + ' ' \
+                                                      +deadlock_string+' '+action_label]
+                                    subsubstring_b = [substring_start+" "+str(count_inn+j+1)+" "+intv+" "+action_label
+                                                        for (j, intv) in zip(interval_idxs, interval_strings)]
+                                    subsublist += subsubstring_a + subsubstring_b
+                                    count_inn += len(m.States)+1
+                            else:
+                                raise NotImplementedError
+
+                        choice += 1
+                        nr_choices_absolute += 1
+                        nr_transitions_absolute += len(subsublist)
+
+                        subsubstring[a_idx] = '\n'.join(subsublist)
+                else:
+                    if not selfloop:
+                        if self.mode == 'interval':
+                            selfloop_prob='[1.0,1.0]'
+                        else:
+                            selfloop_prob= '1.0'
+                        subsubstring = [str(counter+i+1) + ' 0 '+str(counter+i+1)+' '+selfloop_prob]
+
+                        selfloop = True
+
+                        nr_choices_absolute += 1
+                        choice += 1
+                        nr_transitions_absolute += 1
+                    else:
+                        subsubstring = []
+                substring = [subsubstring]
+                transition_file_list_states[i] = substring
+            transition_file_list += transition_file_list_states
+            counter += len(m.States)+1
+
+        flatten = lambda t: [item for sublist in t
+                                  for subsublist in sublist
+                                  for item in subsublist]
+        transition_file_list = '\n'.join(flatten(transition_file_list))
+        size_states = counter
+        size_choices = nr_choices_absolute + 1
+        size_transitions = nr_transitions_absolute + 1
+
+        model_size = {'States': size_states,
+                      'Choices': size_choices,
+                      'Transitions':size_transitions}
+        header = str(size_states)+' '+str(size_choices)+' '+str(size_transitions)+'\n'
+
+        if self.mode == 'interval':
+            firstrow = '0 0 0 [1.0,1.0]\n'
+        else:
+            firstrow = '0 0 0 1.0\n'
+
+        self.write_file(header+firstrow+transition_file_list, self.transition_filename)
+
+        self.specification = self.writePRISM_specification()
+
+    def _write(self):
         """
         Writes .prism and .pctl file for abstraction, then stores the filenames
         """
@@ -772,13 +659,14 @@ class hybrid_PRISM_writer(PRISM_writer):
                             if mode == "interval":
                                 succPieces=[]
                                 for m_num_inner, _ in enumerate(model.iMDPs):
-                                    interval_idxs = [str(i) for i in m.trans_ids[a]]
-                                    interval_idxs[-1] = "-1"
                                     mode_prob = model.mode_probs[m_num,m_num_inner]
-                                    interval_strings = ["[" + str(prob[0]*mode_prob)
-                                                        +","+str(prob[1]*mode_prob)+"]" for prob in m.trans_probs[a]]
-                                    succPieces += [intv +" : (x'="+str(i)+")"+"&(m'="+str(m_num_inner)+")"
-                                                  for (i,intv) in zip(interval_idxs, interval_strings)]
+                                    if mode_prob !=  0.0:
+                                        interval_idxs = [str(i) for i in m.trans_ids[a]]
+                                        interval_idxs[-1] = "-1"
+                                        interval_strings = ["[" + str(prob[0]*mode_prob)
+                                                            +","+str(prob[1]*mode_prob)+"]" for prob in m.trans_probs[a]]
+                                        succPieces += [intv +" : (x'="+str(i)+")"+"&(m'="+str(m_num_inner)+")"
+                                                      for (i,intv) in zip(interval_idxs, interval_strings)]
                             else:
                                 raise NotImplementedError
 
@@ -838,29 +726,3 @@ class hybrid_PRISM_writer(PRISM_writer):
                 specification = 'Pmaxmin=? [ F "reached" ]'
         self.write_file(specification, self.spec_filename)
         return specification
-    
-    #def read(self):
-    #    """
-    #    Reads the results of solving the prism files from earlier
-    #    """
-    #    policy_file = self.policy_filename
-    #    vector_file = self.vector_filename
-    #    policy = np.genfromtxt(policy_file, delimiter=',', dtype='str')
-    #    policy = np.flipud(policy)
-
-    #    optimal_policy= np.zeros(np.shape(policy))
-    #    optimal_delta= np.zeros(np.shape(policy))
-    #    optimal_reward = np.zeros(np.shape(policy)[1])
-
-    #    optimal_reward = np.genfromtxt(vector_file).flatten()
-    #    for i, row in enumerate(policy):
-    #        for j, value in enumerate(row):
-    #            if value != '':
-    #                value_split = value.split('_')
-    #                optimal_policy[i,j] = int(value_split[1])
-    #                optimal_delta[i,j] = int(value_split[3])
-    #            else:
-    #                optimal_policy[i,j] = -1
-    #                optimal_delta[i,j] = -1
-    #    return optimal_policy, optimal_delta, optimal_reward
-
