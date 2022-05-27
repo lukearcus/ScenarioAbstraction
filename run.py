@@ -88,10 +88,10 @@ def get_imdp(load_sel, model, noise_lvl):
         grid = (19,20)
     if model=="n_room_heating":
         if nr_rooms == 2:
-            init = np.array([[10,10]]).T
+            init = np.array([[24,24]]).T
             dyn = Dynamics.multi_room_heating(init)
-            ss = StateSpace.ContStateSpace(nr_rooms, ((15, 15), (25, 25)), [], [((20, 20), (22, 22)) ])
-            grid=(40,40)
+            ss = StateSpace.ContStateSpace(nr_rooms, ((20, 20), (25, 25)), [], [((20, 20), (22, 22)) ])
+            grid=(50,50)
         else:
             raise NotImplementedError
 
@@ -117,7 +117,7 @@ def main():
         noise_lvl=None
     load_sel = opt.load_choice()
     imdp_abstr, ss, dyn, init_state, grid = get_imdp(load_sel, model, noise_lvl)
-    opt_pol, opt_delta, opt_rew = run(init_state, dyn, imdp_abstr,grid,lb_sat_prob, max_samples=200)
+    opt_pol, opt_delta, opt_rew = run(init_state, dyn, imdp_abstr,grid,lb_sat_prob)
     if model == "UAV_gauss" or model=="UAV_dryden":
         ax = ss.draw_space([0,1,2])
     else:

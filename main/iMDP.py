@@ -37,7 +37,7 @@ class iMDP:
         self.all_corners_flat = self.corner_array.reshape((-1,self.N_d))
         state_end = time.perf_counter()
         print("States set up in "+str(state_end-state_start))
-        self.adj_states = self.build_adj_states() # this is slow
+        self.adj_states = self.build_adj_states(parts) # this is slow
         adj_end  = time.perf_counter()
         print("Adjacency set up in "+str(adj_end-state_end))
         self.Goals = self.find_goals()
@@ -57,15 +57,30 @@ class iMDP:
         """
         self.trans_probs, self.trans_ids = self.determine_probs(N) # can we not throw away samples?
 
-    def build_adj_states(self):
+    def build_adj_states(self,parts):
         """
         Builds list of lists, each list contains states adjacent to the state at the corresponding index
         """
-        incs = np.vstack((np.diag(self.part_size),np.diag(-self.part_size)))
-        adj_array = np.array(self.States)[:, np.newaxis, :] + incs
-        adj_states = [[self.States.index(tuple(adj_state)) for adj_state in adj\
-                        if self.check_in_valid_range(adj_state)[0]]\
-                        for adj in adj_array]
+        adj_states = [[] for state in self.States]
+        for i, _ in enumerate(self.States):
+            step = 1
+            checker = 1
+            for dim in range(self.N_d):
+                checker *= parts[-1-dim]
+                if i%checker != 0:
+                    adj = i-step
+                    if adj >= 0:
+                        adj_states[i].append(adj)
+                if (i+step)%checker != 0:
+                    adj = i+step
+                    if adj < len(self.States):
+                        adj_states[i].append(adj)
+                step *= parts[-1-dim]
+        #incs = np.vstack((np.diag(self.part_size),np.diag(-self.part_size)))
+        #adj_array = np.array(self.States)[:, np.newaxis, :] + incs
+        #adj_states = [[self.States.index(tuple(adj_state)) for adj_state in adj\
+        #                if self.check_in_valid_range(adj_state)[0]]\
+        #                for adj in tqdm(adj_array)]
         return adj_states
 
     def create_partition(self, min_pos, parts):
@@ -78,6 +93,7 @@ class iMDP:
         """
         state_increments = []
         print("Setting up iMDP states")
+        dim_counter = [0 for _ in range(self.N_d)]
         for dim in range(self.N_d):
             dim_inc = []
             state_inc = []
@@ -93,6 +109,8 @@ class iMDP:
         part_arr = np.array(list(itertools.product(*part_incs)))
         corner_array = np.array(states)[:, np.newaxis, :] + part_arr
         end_corners_flat = np.reshape(corner_array[:,[0,-1],:],(-1,self.N_d))
+        coord_list = [list(range(parts[i])) for i in range(self.N_d)]
+        self.N_d_coords = list(itertools.product(*coord_list))
         return states, corner_array, end_corners_flat
 
     def create_table(self, N):
@@ -274,7 +292,7 @@ class iMDP:
             for i, elem in enumerate(u):
                 point = self.A_pinv @ (self.dyn.B @ np.expand_dims(elem,1))
                 basis_vectors[i,:] = point.flatten() - origin.flatten()
-            parallelo2cube = np.linalg.pinv(basis_vectors) # changed inv to pinv (is this allowed????)
+            parallelo2cube = np.linalg.inv(basis_vectors) # changed inv to pinv (is this allowed????)
             x_inv_area_normalised = x_inv_area @ parallelo2cube
             predSet_originShift = -np.average(x_inv_area_normalised, axis=0)
             allRegionVertices = corners_array @ parallelo2cube - predSet_originShift

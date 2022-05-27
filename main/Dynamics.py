@@ -51,9 +51,7 @@ class multi_room_heating(hybrid_dynamic_base):
         self.T=T
         self.N_modes = nr_rooms
         u_min = [np.ones((nr_rooms,1))*min_u for i in range(nr_rooms)]
-        u_max = [np.zeros((nr_rooms,1)) for i in range(nr_rooms)]
-        for i in range(nr_rooms):
-            u_max[i][i]=max_u
+        u_max = [np.ones((nr_rooms,1))*max_u for i in range(nr_rooms)]
         sigma = np.diag([sigma for i in range(nr_rooms)]) # assume noise is equal in all modes
         ambient_temp = 6
         if nr_rooms == 2:
@@ -63,7 +61,7 @@ class multi_room_heating(hybrid_dynamic_base):
             c_1=0.8
             c_2=0.9333
             A = [np.array([[1-b_1-a_12, a_12],[a_12, 1-b_2-a_12]]) for i in range(nr_rooms)]
-            B = [np.array([[c_1,0],[0,0]]).T, np.array([[0,0],[0, c_2]]).T]
+            B = [np.array([[c_1,0],[0,c_2/2]]).T, np.array([[c_1/2,0],[0, c_2]]).T]
             Q = [np.array([[b_1*ambient_temp, b_2*ambient_temp]]).T for i in range(nr_rooms)]
             self.transition_matrix = np.array([[0.5, 0.5],[0.5,0.5]])
         elif nr_rooms == 3:
