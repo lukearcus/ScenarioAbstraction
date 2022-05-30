@@ -6,7 +6,12 @@ def run(init_state, dyn, test_imdp,  grid, min_lb,init_samples=25, max_iters=20,
     lb_sat_prob = 0
     i = 0
     samples = init_samples
-    init_id = test_imdp.find_state_index(init_state.T)
+    if dyn.hybrid:
+        init_id = test_imdp.find_state_index(init_state[0].T)[0][0]+1
+        init_mode = init_state[1]
+        init_id += init_mode*(len(test_imdp.iMDPs[0].States)+1)
+    else:
+        init_id = test_imdp.find_state_index(init_state.T)+1
     while lb_sat_prob < min_lb and i < max_iters and samples < max_samples:
         print("Computing new probabilities with " + str(samples) + " samples")
         test_imdp.update_probs(samples)
@@ -17,7 +22,9 @@ def run(init_state, dyn, test_imdp,  grid, min_lb,init_samples=25, max_iters=20,
         if not os.path.exists(input_folder):
             os.makedirs(input_folder+'/')
         print("Writing PRISM files")
-        writer = iMDP.hybrid_PRISM_writer(test_imdp, dyn.horizon, input_folder, output_folder, _explicit=True)
+        writer = iMDP.steered_hybrid_PRISM_writer(
+                                test_imdp, dyn.horizon, input_folder, output_folder, _explicit=True
+                                )
         writer.write()
         print("Solving iMDP")
         writer.solve_PRISM(PRISM_MEM)

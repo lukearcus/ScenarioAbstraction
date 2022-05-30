@@ -9,12 +9,12 @@ import UI.choices as opt
 from main.run_loop import run
 
 
-def get_imdp(load_sel, model, noise_lvl):
+def get_imdp(load_sel, model):
     """
     Either loads or creates a fresh iMDP abstraction based on chosen model
     Then saves based on users preference (if generating a fresh abstraction)
     """
-    if model == "n_room_heating":
+    if model == "n_room_heating" or model == "steered_n_room_heating":
         nr_rooms = opt.rooms_choice()
         model_name = model+"_"+str(nr_rooms)
     else:
@@ -27,6 +27,8 @@ def get_imdp(load_sel, model, noise_lvl):
             print("Existing abstraction not found, proceeding to create new")
             load_sel = "N"
     if model == "UAV_gauss" or model == "UAV_dryden":
+        if model != "1room heating" and model != 'n_room_heating':
+            noise_lvl = opt.noise_choice()
         init = np.array([[-14, 8, 106, 0, -2, 0]]).T
         T=1
         lb_acc = -4
@@ -94,6 +96,16 @@ def get_imdp(load_sel, model, noise_lvl):
             grid=(50,50)
         else:
             raise NotImplementedError
+    if model=="steered_n_room_heating":
+        if nr_rooms == 2:
+            init_state = np.array([[24,24]]).T
+            init_mode = 0
+            dyn = Dynamics.steered_multi_room(init_state, init_mode)
+            init = [init_state, init_mode]
+            ss = StateSpace.ContStateSpace(nr_rooms, ((20, 20), (25, 25)), [], [((20, 20), (22, 22)) ])
+            grid=(50,50)
+        else:
+            raise NotImplementedError
 
     if load_sel == "N":
         if dyn.hybrid == False:
@@ -111,12 +123,8 @@ def main():
     """
     lb_sat_prob=0.5
     model = opt.model_choice()
-    if model != "1room heating" and model != 'n_room_heating':
-        noise_lvl = opt.noise_choice()
-    else:
-        noise_lvl=None
     load_sel = opt.load_choice()
-    imdp_abstr, ss, dyn, init_state, grid = get_imdp(load_sel, model, noise_lvl)
+    imdp_abstr, ss, dyn, init_state, grid = get_imdp(load_sel, model)
     opt_pol, opt_delta, opt_rew = run(init_state, dyn, imdp_abstr,grid,lb_sat_prob)
     if model == "UAV_gauss" or model=="UAV_dryden":
         ax = ss.draw_space([0,1,2])

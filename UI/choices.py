@@ -45,7 +45,7 @@ def model_choice():
     model_selected = False
     while not model_selected:
         print("Select a model:")
-        models = ["UAV_gauss", "UAV_dryden", "1room heating","n_room_heating"]
+        models = ["UAV_gauss", "UAV_dryden", "1room heating","n_room_heating","steered_n_room_heating"]
         for i, model in enumerate(models):
             print(str(i) + "- "+model)
         model_sel = input()

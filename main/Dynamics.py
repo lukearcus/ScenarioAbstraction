@@ -1,6 +1,7 @@
 import numpy as np
 import main.BAS_params as BAS_class
 
+
 class hybrid_dynamic_base:
     """
     Base class for hybdrid dynamic systems
@@ -83,6 +84,30 @@ class multi_room_heating(hybrid_dynamic_base):
         
         # store current state in individual system state
         self.individual_systems[self.mode].state = self.state
+
+class steered_multi_room(multi_room_heating):
+    """
+    Multiple room heating but now with control over discrete modes
+    """
+    def __init__(self, init_state, init_mode=0, T=15, min_u=0, max_u=1, nr_rooms = 2, sigma=0.25):
+        super().__init__(init_state, init_mode, T, min_u, max_u, nr_rooms, sigma)
+        if nr_rooms == 2:
+            # now one transition matrix for each mode, each row is an action and contains transition probabilities
+            # to next mode
+            self.transition_matrices = [np.array([[0.9,0.1],[0.1,0.9]]) for i in range(2)]
+
+    def state_update(self, cont_control, disc_control):
+        # update continuous state
+        curr_dyn = self.individual_systems[self.mode]
+        curr_dyn.state_update(cont_control)
+        self.state = curr_dyn.state
+
+        # update discrete state
+        self.mode = np.random.choice(self.N_modes, p = self.transition_matrices[self.mode][disc_control])
+        
+        # store current state in individual system state
+        self.individual_systems[self.mode].state = self.state
+
 
 class dynamic_base:
     """

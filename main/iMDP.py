@@ -375,7 +375,7 @@ class hybrid_iMDP:
     
     def __init__(self, Cont_state_space, Dynamics, parts, _beta = 0.01):
         self.iMDPs = [iMDP(Cont_state_space, dyn, parts, _beta) for dyn in Dynamics.individual_systems]
-        self.mode_probs = Dynamics.transition_matrix
+        self.discrete_trans = Dynamics.transition_matrices
         self.N_modes = Dynamics.N_modes
 
     def find_state_index(self, x):
@@ -385,7 +385,6 @@ class hybrid_iMDP:
         for imdp in self.iMDPs:
             imdp.update_probs(N) 
             # might be able to share probabilities if noises same, just need to think about checking actions enabled
-
 
 class PRISM_writer:
     """
@@ -475,6 +474,153 @@ class PRISM_writer:
                     str(java_memory) + "g "+model_file+" -pf '"+spec+"' "+options
         subprocess.Popen(command, shell=True).wait()
 
+
+class steered_hybrid_PRISM_writer(PRISM_writer):
+    """
+    Class for dealing with hybrid formulations in PRISM
+    """
+    
+    def _write_explicit(self):
+        state_list = ['(x,m)']
+        counter=0
+        for m_num, m in enumerate(self.model.iMDPs):
+            state_list += [str(counter)+':(-1,'+str(m_num)+')']
+            state_list += [str(counter+i+1)+':('+str(i)+','+str(m_num)+')'\
+                             for i in range(len(m.States))]
+            counter += len(m.States)+1
+        
+        state_string = '\n'.join(state_list)
+        
+        self.write_file(state_string, self.state_filename)
+        
+        label_file_list = ['0="init" 1="deadlock" 2="reached"']
+
+        counter = 0
+        for m_num, m in enumerate(self.model.iMDPs):
+            substring = [str(counter)+': 1']
+            substring += ['' for i in m.States]
+            for i, s in enumerate(m.States):
+                substring[i+1] = str(counter+i+1)+': 0'
+
+                if len(m.Actions_forward[i]) == 0:
+                    substring[i+1] += ' 1'
+            
+            for i in m.Goals:
+                substring[i+1] += ' 2'
+
+            label_file_list += substring
+            counter += len(m.States)+1
+
+        label_file_string = '\n'.join(label_file_list)
+
+        self.write_file(label_file_string, self.label_filename)
+        
+        nr_choices_absolute = 0
+        nr_transitions_absolute = 0
+        transition_file_list = []
+        counter = 0
+        for m_num, m in enumerate(self.model.iMDPs):
+            transition_file_list_states = ['' for i in m.States]
+            for i, s in enumerate(tqdm(m.States)):
+                choice = 0
+                selfloop = False
+                #import pdb; pdb.set_trace()
+                if len(m.Actions_forward[i]) > 0:
+                    subsubstring = ['' for j in m.Actions_forward[i]]
+
+                    for a_idx, a in enumerate(m.Actions_forward[i]):
+                        subsublist = []
+                        for disc_act_id, trans_probs in enumerate(self.model.discrete_trans[m_num]):
+                            action_label = "a_"+str(a)+"_m_"+str(m_num)+"_p_"+str(disc_act_id)
+                            count_inn = 0
+                            for m_next_id, trans_prob in enumerate(trans_probs):
+                                substring_start = str(counter+i+1) + ' '+str(choice)
+                                if self.mode == "interval":
+                                    if trans_prob !=  0.0:
+                                        interval_idxs = [j for j in m.trans_ids[a]]
+                                        interval_strings = ["[" + str(prob[0]*trans_prob)
+                                                            +","+str(prob[1]*trans_prob)+"]"\
+                                                            for prob in m.trans_probs[a]]
+                                        deadlock_string = interval_strings.pop(-1)
+                                        subsubstring_a = [substring_start+' ' + str(count_inn) + ' ' \
+                                                          +deadlock_string+' '+action_label]
+                                        subsubstring_b = [substring_start+" "+str(count_inn+j+1)+" "+intv+" "+action_label
+                                                            for (j, intv) in zip(interval_idxs, interval_strings)]
+                                        subsublist += subsubstring_a + subsubstring_b
+                                        count_inn += len(m.States)+1
+                                else:
+                                    raise NotImplementedError
+
+                            choice += 1
+                            nr_choices_absolute += 1
+                        nr_transitions_absolute += len(subsublist)
+                        subsubstring[a_idx] = '\n'.join(subsublist)
+                else:
+                    if not selfloop:
+                        if self.mode == 'interval':
+                            selfloop_prob='[1.0,1.0]'
+                        else:
+                            selfloop_prob= '1.0'
+                        subsubstring = [str(counter+i+1) + ' 0 '+str(counter+i+1)+' '+selfloop_prob]
+
+                        selfloop = True
+
+                        nr_choices_absolute += 1
+                        choice += 1
+                        nr_transitions_absolute += 1
+                    else:
+                        subsubstring = []
+                substring = [subsubstring]
+                transition_file_list_states[i] = substring
+            transition_file_list += transition_file_list_states
+            counter += len(m.States)+1
+
+        flatten = lambda t: [item for sublist in t
+                                  for subsublist in sublist
+                                  for item in subsublist]
+        transition_file_list = '\n'.join(flatten(transition_file_list))
+        size_states = counter
+        size_choices = nr_choices_absolute + 1
+        size_transitions = nr_transitions_absolute + 1
+
+        model_size = {'States': size_states,
+                      'Choices': size_choices,
+                      'Transitions':size_transitions}
+        header = str(size_states)+' '+str(size_choices)+' '+str(size_transitions)+'\n'
+
+        if self.mode == 'interval':
+            firstrow = '0 0 0 [1.0,1.0]\n'
+        else:
+            firstrow = '0 0 0 1.0\n'
+
+        self.write_file(header+firstrow+transition_file_list, self.transition_filename)
+
+        self.specification = self.writePRISM_specification()
+
+    def _write(self):
+        raise NotImplementedError
+
+    def writePRISM_specification(self):
+        """
+        Writes PRISM specification file in PCTL
+        """
+        N = self.N
+        mode = self.mode
+        model = self.model
+        horizon = self.horizon
+        if horizon == "infinite":
+            horizonLen = int(N/model.iMDPs[0].dyn.grouped_timesteps)
+            if mode == "estimate":
+                specification = "Pmax=? [ F<="+str(horizonLen)+' "reached" ]'
+            else:
+                specification = "Pmaxmin=? [ F<="+str(horizonLen)+' "reached" ]'
+        else:
+            if mode == "estimate":
+                specification = 'Pmax=? [ F "reached" ]'
+            else:
+                specification = 'Pmaxmin=? [ F "reached" ]'
+        self.write_file(specification, self.spec_filename)
+        return specification
 
 class hybrid_PRISM_writer(PRISM_writer):
     """
