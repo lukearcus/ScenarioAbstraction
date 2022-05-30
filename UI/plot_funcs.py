@@ -10,12 +10,12 @@ def create_plots(model, opt_pol, opt_rew, imdp, init, ax=None):
         heatmap(opt_rew, (19,20), [36,40], [22.9,19.1], ax)
     if model=="UAV_gauss" or model=="UAV_dryden":
         plot_policy(opt_pol, init, imdp, ax)
-    if model=="n_room_heating":
+    if model=="n_room_heating" or model=="steered_n_room_heating":
         nr_rooms = len(imdp.iMDPs)
         nr_states = len(imdp.iMDPs[0].States)+1
         fig, axs = plt.subplots(1, nr_rooms)
         for i in range(nr_rooms):
-            axs[i] = heatmap(opt_rew[nr_states*i:nr_states*(i+1)], (40,40), [15,25], [25,15], axs[i])
+            axs[i] = heatmap(opt_rew[nr_states*i:nr_states*(i+1)], (40,40), [20,25], [25,20], axs[i])
     plt.show()
 
 def heatmap(rewards, grid,xlim,ylim, ax=None):

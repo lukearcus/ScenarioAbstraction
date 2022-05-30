@@ -10,6 +10,7 @@ class hybrid_dynamic_base:
     grouped_timesteps = 1
     N_modes=-1
     hybrid = True
+    steered = False
     
     def __init__(self, init_state):
         self.state = init_state
@@ -85,10 +86,37 @@ class multi_room_heating(hybrid_dynamic_base):
         # store current state in individual system state
         self.individual_systems[self.mode].state = self.state
 
+class steered_MC(hybrid_dynamic_base):
+    """
+    Wrapper class for converting a non-steered MC hybrid model to a dummy steered MDP
+    (i.e. MDP with one action per state)
+    """
+    steered = True
+    def __init__(self, MC_model):
+       self.state = MC_model.state
+       self.mode = MC_model.mode
+       self.T = MC_model.T
+       self.N_modes = MC_model.N_modes
+       self.individual_systems = MC_model.individual_systems
+       self.transition_matrices = [np.expand_dims(probs,0) for probs in MC_model.transition_matrix]
+
+    def state_update(self, cont_control, disc_control=0):
+        # update continuous state
+        curr_dyn = self.individual_systems[self.mode]
+        curr_dyn.state_update(control)
+        self.state = curr_dyn.state
+
+        # update discrete state
+        self.mode = np.random.choice(self.N_modes, p = self.transition_matrices[self.mode])
+        
+        # store current state in individual system state
+        self.individual_systems[self.mode].state = self.state
+
 class steered_multi_room(multi_room_heating):
     """
     Multiple room heating but now with control over discrete modes
     """
+    steered = True
     def __init__(self, init_state, init_mode=0, T=15, min_u=0, max_u=1, nr_rooms = 2, sigma=0.25):
         super().__init__(init_state, init_mode, T, min_u, max_u, nr_rooms, sigma)
         if nr_rooms == 2:
