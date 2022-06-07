@@ -8,7 +8,7 @@ def create_plots(model, opt_pol, opt_rew, imdp, init, ax=None):
     """
     if model=="1room heating":
         heatmap(opt_rew, (19,20), [36,40], [22.9,19.1], ax)
-    if model=="UAV_gauss" or model=="UAV_dryden":
+    if model.split("_")[0]=="UAV":
         plot_policy(opt_pol, init, imdp, ax)
     if model=="n_room_heating" or model=="steered_n_room_heating":
         nr_rooms = len(imdp.iMDPs)
@@ -39,7 +39,8 @@ def plot_policy(policy, init, imdp, ax=None):
     if ax is None:
         fig=plt.figure()
         ax = plt.axes(projection='3d')
-    ind = int(imdp.find_state_index(init.T)[0][0][0])
+    ind = int(imdp.find_state_index(init[0].T)[0][0][0])
+    import pdb; pdb.set_trace()
     x = [imdp.States[ind][0]]
     y = [imdp.States[ind][1]]
     z = [imdp.States[ind][2]]

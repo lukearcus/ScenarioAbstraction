@@ -155,7 +155,7 @@ def main():
     model = opt.model_choice()
     load_sel = opt.load_choice()
     imdp_abstr, ss, dyn, init_state, grid, model_name = get_imdp(load_sel, model)
-    opt_pol, opt_delta, opt_rew = run(init_state, dyn, imdp_abstr, grid, lb_sat_prob, model_name, max_samples=3000)
+    opt_pol, opt_delta, opt_rew = run(init_state, dyn, imdp_abstr, grid, lb_sat_prob, model_name, max_samples=101)
     if model == "UAV_gauss" or model=="UAV_dryden":
         ax = ss.draw_space([0,1,2])
     else:
