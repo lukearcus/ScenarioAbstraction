@@ -12,14 +12,22 @@ class hybrid_dynamic_base:
     hybrid = True
     steered = False
     
-    def __init__(self, init_state):
+    def __init__(self, init_state, init_mode):
         self.state = init_state
+        self.mode = init_mode
 
-    def state_update(self):
-        """
-        update state
-        """
-        pass
+    def state_update(self, control):
+        
+        # update continuous state
+        curr_dyn = self.individual_systems[self.mode]
+        curr_dyn.state_update(control)
+        self.state = curr_dyn.state
+
+        # update discrete state
+        self.mode = np.random.choice(self.N_modes, p = self.transition_matrix[self.mode])
+        
+        # store current state in individual system state
+        self.individual_systems[self.mode].state = self.state
 
     def noise(self):
         """
@@ -35,11 +43,7 @@ class single_hybrid(hybrid_dynamic_base):
         self.N_modes = 1
         self.T=system.T
         self.mode = 0
-        self.transition_matrix = np.array([[1]])
-    
-    def state_update(self, control):
-        self.individual_systems[0].state_update(control)
-        self.state = self.individual_systems[0].state
+        self.transition_matrix = np.array([[1]])    
 
 class multi_room_heating(hybrid_dynamic_base):
     """
@@ -73,18 +77,6 @@ class multi_room_heating(hybrid_dynamic_base):
             A = [np.array([[1, a_12, a_13],[a_12, 1, a_23],[a_13, a_23, 1]]) for i in range(nr_rooms)]
         self.individual_systems = [LTI_gauss(init_state, A[i], B[i], Q[i], u_max[i], u_min[i], sigma) for i in range(nr_rooms)]
 
-    def state_update(self, control):
-        
-        # update continuous state
-        curr_dyn = self.individual_systems[self.mode]
-        curr_dyn.state_update(control)
-        self.state = curr_dyn.state
-
-        # update discrete state
-        self.mode = np.random.choice(self.N_modes, p = self.transition_matrix[self.mode])
-        
-        # store current state in individual system state
-        self.individual_systems[self.mode].state = self.state
 
 class steered_MC(hybrid_dynamic_base):
     """
@@ -112,18 +104,70 @@ class steered_MC(hybrid_dynamic_base):
         # store current state in individual system state
         self.individual_systems[self.mode].state = self.state
 
-class steered_multi_room(multi_room_heating):
-    """
-    Multiple room heating but now with control over discrete modes
-    """
-    steered = True
-    def __init__(self, init_state, init_mode=0, T=15, min_u=0, max_u=1, nr_rooms = 2, sigma=0.25):
-        super().__init__(init_state, init_mode, T, min_u, max_u, nr_rooms, sigma)
-        if nr_rooms == 2:
-            # now one transition matrix for each mode, each row is an action and contains transition probabilities
-            # to next mode
-            self.transition_matrices = [np.array([[0.9,0.1],[0.1,0.9]]) for i in range(2)]
+class unsteered_test(hybrid_dynamic_base):
+    def __init__(self, init_state, init_mode, sigma=0.1):
+        self.state=init_state
+        self.mode=init_mode
+        self.T=0.1
+        self.N_modes = 2
+        u_min = [np.ones((2,1))*-2 for i in range(2)]
+        u_max = [np.ones((2,1))*2 for i in range(2)]
+        sigma = np.diag([sigma for i in range(2)]) # assume noise is equal in all modes
+        ambient_temp = 6
+        a = [np.array([[1, 0],[0, 1]]), np.array([[1, 0.5],[0.5, 1]])]
+        b = [np.array([[1,0],[0,1]]), np.array([[1,0],[0, 1]])]
+        q = [np.array([[0,0]]).T for i in range(2)]
+        self.transition_matrix = np.array([[0.9999, 0.0001],[0.0001,0.9999]])
+        self.individual_systems = [LTI_gauss(init_state, a[i], b[i], q[i], u_max[i], u_min[i], sigma) for i in range(2)]
+        
+    def state_update(self, cont_control):
+        # update continuous state
+        curr_dyn = self.individual_systems[self.mode]
+        curr_dyn.state_update(cont_control)
+        self.state = curr_dyn.state
 
+        # update discrete state
+        self.mode = np.random.choice(self.n_modes, p = self.transition_matrix[self.mode])
+        
+        # store current state in individual system state
+        self.individual_systems[self.mode].state = self.state
+
+class steered_test(hybrid_dynamic_base):
+    """
+    test with arbitrary dynamics
+    """
+    steered=True
+    def __init__(self, init_state, init_mode, sigma=0.1):
+        self.transition_matrices = [np.array([[0.9,0.1],[0.1,0.9]]) for i in range(2)]
+        self.state=init_state
+        self.mode=init_mode
+        self.T=0.1
+        self.N_modes = 2
+        u_min = [np.ones((2,1))*-2 for i in range(2)]
+        u_max = [np.ones((2,1))*2 for i in range(2)]
+        sigma = np.diag([sigma for i in range(2)]) # assume noise is equal in all modes
+        ambient_temp = 6
+        a = [np.array([[1, 0],[0, 1]]), np.array([[1, 0.5],[0.5, 1]])]
+        b = [np.array([[1,0],[0,1]]), np.array([[1,0],[0, 1]])]
+        q = [np.array([[0,0]]).T for i in range(2)]
+        #self.transition_matrix = np.array([[0.5, 0.5],[0.5,0.5]])
+        self.individual_systems = [LTI_gauss(init_state, a[i], b[i], q[i], u_max[i], u_min[i], sigma) for i in range(2)]
+        
+    def state_update(self, cont_control, disc_control):
+        # update continuous state
+        curr_dyn = self.individual_systems[self.mode]
+        curr_dyn.state_update(cont_control)
+        self.state = curr_dyn.state
+
+        # update discrete state
+        self.mode = np.random.choice(self.n_modes, p = self.transition_matrices[self.mode][disc_control])
+        
+        # store current state in individual system state
+        self.individual_systems[self.mode].state = self.state
+
+class steered_base(hybrid_dynamic_base):
+
+    steered = True
     def state_update(self, cont_control, disc_control):
         # update continuous state
         curr_dyn = self.individual_systems[self.mode]
@@ -136,6 +180,65 @@ class steered_multi_room(multi_room_heating):
         # store current state in individual system state
         self.individual_systems[self.mode].state = self.state
 
+class steered_drone_speed(steered_base):
+    """
+    2 Drone systems with different allowed accelerations and noises
+    """
+    def __init__(self, init_state, init_mode=0, T=1):
+        self.state = init_state
+        self.mode = init_mode
+        self.individual_systems = [Full_Drone_gauss(init_state, T, 4, -4, _sigma=0.15),\
+                                   Full_Drone_gauss(init_state, T, 8, -8, _sigma=0.3)]
+        self.transition_matrices = [np.array([[0.9,0.1],[0.1,0.9]]) for i in range(2)]
+
+class steered_drone_dir(steered_base):
+    """
+    2 Drone systems with different allowed accelerations and noises
+    """
+    def __init__(self, init_state, init_mode=0, T=1):
+        self.state = init_state
+        self.mode = init_mode
+        self.T = T
+        self.individual_systems = [Full_Drone_gauss(init_state, T, np.array([[8,8,4,8,8,4]]).T,\
+                                    np.array([[-8,-8,-4,-8,-8,-4]]).T, _sigma=0.15),\
+                                   Full_Drone_gauss(init_state, T, np.array([[4,4,8,4,4,8]]).T,\
+                                    np.array([[-4,-4,-8,-4,-4,-8]]).T, _sigma=0.15)]
+        self.transition_matrices = [np.array([[0.9,0.1],[0.1,0.9]]) for i in range(2)]
+
+class drone_var_noise(hybrid_dynamic_base):
+    def __init__(self, init_state, init_mode=0, T=1):
+        self.state = init_state
+        self.mode = init_mode
+        self.T = T
+        self.individual_systems = [Full_Drone_gauss(init_state, T, 4,\
+                                    -4, _sigma=0.15),\
+                                   Full_Drone_gauss(init_state, T, 4,\
+                                    -4, _sigma=0.75)]
+        self.transition_matrix = np.array([[0.99,0.01],[0.5,0.5]])
+
+
+class steered_multi_room(multi_room_heating):
+    """
+    Multiple room heating but now with control over discrete modes
+    """
+    steered = True
+    def __init__(self, init_state, init_mode=0, T=15, min_u=0, max_u=1, nr_rooms = 2, sigma=0.25):
+        super().__init__(init_state, init_mode, T, min_u, max_u, nr_rooms, sigma)
+        if nr_rooms == 2:
+            # now one transition matrix for each mode, each row is an action and contains transition probabilities
+            # to next mode
+            self.transition_matrices = [np.array([[0.9,0.1],[0.1,0.9]]) for i in range(2)]
+    def state_update(self, cont_control, disc_control):
+        # update continuous state
+        curr_dyn = self.individual_systems[self.mode]
+        curr_dyn.state_update(cont_control)
+        self.state = curr_dyn.state
+
+        # update discrete state
+        self.mode = np.random.choice(self.N_modes, p = self.transition_matrices[self.mode][disc_control])
+        
+        # store current state in individual system state
+        self.individual_systems[self.mode].state = self.state
 
 class dynamic_base:
     """
@@ -352,9 +455,12 @@ class Full_Drone_Base(Drone_base):
         self.A_1_step = np.copy(self.A)
         self.A = self.A_full_rank
         self.B = self.B_full_rank
-        self.u_max = np.ones((self.B.shape[1],1)) * max_acc
-        self.u_min = np.ones((self.B.shape[1],1)) * min_acc
-
+        if type(max_acc) == int:
+            self.u_max = np.ones((self.B.shape[1],1)) * max_acc
+            self.u_min = np.ones((self.B.shape[1],1)) * min_acc
+        else:
+            self.u_max = max_acc
+            self.u_min = min_acc
 
 class Drone_gauss(Drone_base):
     def __init__(self, init_state, T,max_acc = float('inf'), min_acc = -float('inf'), _mu=0, _sigma=1):

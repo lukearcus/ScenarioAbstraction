@@ -28,7 +28,7 @@ def get_imdp(load_sel, model):
             load_sel = "N"
     if model != "1room heating":
         noise_lvl = opt.noise_choice()
-    if model == "UAV_gauss" or model == "UAV_dryden":
+    if model.split("_")[0] == "UAV":
         init = np.array([[-14, 8, 106, 0, -2, 0]]).T
         T=1
         lb_acc = -4
@@ -80,6 +80,15 @@ def get_imdp(load_sel, model):
             mu=0
             sigma=noise_lvl*0.075
             dyn = Dynamics.Full_Drone_gauss(init, T, ub_acc, lb_acc, mu, sigma)
+        elif model == "UAV_speed_choice":
+            dyn = Dynamics.steered_drone_speed(init, 0, T)
+            init = [init, 0]
+        elif model == "UAV_dir_choice":
+            dyn = Dynamics.steered_drone_dir(init, 0, T)
+            init = [init, 0]
+        elif model == "UAV_var_noise":
+            dyn = Dynamics.drone_var_noise(init, 0, T)
+            init = [init, 0]
         else:
             wind_speed = noise_lvl*15
             dyn = Dynamics.Full_Drone_dryden(init, T, ub_acc, lb_acc, 5)
@@ -108,9 +117,26 @@ def get_imdp(load_sel, model):
             grid=(40,40)
         else:
             raise NotImplementedError
+    if model == "unsteered_test":
+            sigma = noise_lvl*0.01
+            init_state = np.array([[-10,10]]).T
+            init_mode = 0
+            dyn = Dynamics.unsteered_test(init_state, init_mode, sigma=sigma)
+            init = [init_state, init_mode]
+            ss = StateSpace.ContStateSpace(2, ((-20, -20), (20, 20)), [], [((10, 10), (11, 11)) ])
+            grid=(40,40)
+    if model == "steered_test":
+            sigma = noise_lvl*0.01
+            init_state = np.array([[-10,10]]).T
+            init_mode = 0
+            dyn = Dynamics.steered_test(init_state, init_mode, sigma=sigma)
+            init = [init_state, init_mode]
+            ss = StateSpace.ContStateSpace(2, ((-20, -20), (20, 20)), [], [((9, 9), (11, 11)) ])
+            grid=(40,40)
 
     if load_sel == "N":
         if dyn.hybrid == False:
+            init = [init, 0]
             dyn = Dynamics.single_hybrid(dyn) # can make single system into a hybrid with 1 discrete mode
         if dyn.steered == False:
             dyn = Dynamics.steered_MC(dyn)
@@ -129,7 +155,7 @@ def main():
     model = opt.model_choice()
     load_sel = opt.load_choice()
     imdp_abstr, ss, dyn, init_state, grid, model_name = get_imdp(load_sel, model)
-    opt_pol, opt_delta, opt_rew = run(init_state, dyn, imdp_abstr, grid, lb_sat_prob, model_name)
+    opt_pol, opt_delta, opt_rew = run(init_state, dyn, imdp_abstr, grid, lb_sat_prob, model_name, max_samples=3000)
     if model == "UAV_gauss" or model=="UAV_dryden":
         ax = ss.draw_space([0,1,2])
     else:

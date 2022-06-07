@@ -16,6 +16,13 @@ def create_plots(model, opt_pol, opt_rew, imdp, init, ax=None):
         fig, axs = plt.subplots(1, nr_rooms)
         for i in range(nr_rooms):
             axs[i] = heatmap(opt_rew[nr_states*i:nr_states*(i+1)], (40,40), [20,25], [25,20], axs[i])
+    if model=="steered_test" or model=="unsteered_test":
+        nr_rooms = len(imdp.iMDPs)
+        nr_states = len(imdp.iMDPs[0].States)+1
+        fig, axs = plt.subplots(1, nr_rooms)
+        for i in range(nr_rooms):
+            axs[i] = heatmap(opt_rew[nr_states*i:nr_states*(i+1)], (40,40), [-20,20], [20,-20], axs[i])
+
     plt.show()
 
 def heatmap(rewards, grid,xlim,ylim, ax=None):

@@ -300,19 +300,19 @@ class iMDP:
         else:
             x_inv_hull = Delaunay(x_inv_area, qhull_options='QJ')
             allRegionVertices = corners_array
-        actions_forward = {i : [] for i, s in enumerate(self.States) if i not in self.Unsafes}
+        actions_forward = {i : [] for i, s in enumerate(self.States)}
         actions_inv = {i : [] for i,s in enumerate(self.States) if i not in self.Unsafes}
         if dim_equal:
             nr_acts = len(actions_inv)
             for act in tqdm(actions_inv):
                 A_inv_d = self.A_pinv @ np.array(self.States[act])
                 all_vert_normed = (A_inv_d @ parallelo2cube) - allRegionVertices
-
                 poly_reshape = np.reshape(all_vert_normed, (len(self.States),n*(2**n)))
                 enabled_in = np.maximum(np.max(poly_reshape, axis=1), -np.min(poly_reshape, axis=1)) <= 1.0
                 state_ids = np.where(enabled_in)[0]
-                actions_inv[act] = [state_id for state_id in state_ids\
-                                if state_id not in self.Unsafes]
+                actions_inv[act] = list(set(state_ids)-set(self.Unsafes))
+                #actions_inv[act] = [state_id for state_id in state_ids\
+                #                if state_id not in self.Unsafes]
                 for state_id in actions_inv[act]:
                     actions_forward[state_id].append(act)
         else:
@@ -537,8 +537,8 @@ class hybrid_PRISM_writer(PRISM_writer):
                                 if self.mode == "interval":
                                     if trans_prob !=  0.0:
                                         interval_idxs = [j for j in m.trans_ids[a]]
-                                        interval_strings = ["[" + str(prob[0]*trans_prob)
-                                                            +","+str(prob[1]*trans_prob)+"]"\
+                                        interval_strings = ["[" + str(dec_round(prob[0]*trans_prob,6))
+                                                            +","+str(dec_round(prob[1]*trans_prob,6))+"]"\
                                                             for prob in m.trans_probs[a]]
                                         deadlock_string = interval_strings.pop(-1)
                                         subsubstring_a = [substring_start+' ' + str(count_inn) + ' ' \
@@ -588,14 +588,15 @@ class hybrid_PRISM_writer(PRISM_writer):
                 transition_file_list_states[i] = substring
             transition_file_list += transition_file_list_states
             counter += len(m.States)+1
-
+        del(transition_file_list_states)
+        del(subsubstring)
+        del(substring)
         flatten = lambda t: [item for sublist in t
                                   for subsublist in sublist
                                   for item in subsublist]
-        transition_file_list = '\n'.join(flatten(transition_file_list))
         size_states = counter
-        size_choices = nr_choices_absolute + 1
-        size_transitions = nr_transitions_absolute + 1
+        size_choices = nr_choices_absolute + len(self.model.iMDPs)
+        size_transitions = nr_transitions_absolute + len(self.model.iMDPs)
 
         model_size = {'States': size_states,
                       'Choices': size_choices,
@@ -603,11 +604,19 @@ class hybrid_PRISM_writer(PRISM_writer):
         header = str(size_states)+' '+str(size_choices)+' '+str(size_transitions)+'\n'
 
         if self.mode == 'interval':
-            firstrow = '0 0 0 [1.0,1.0]\n'
+            counter = 0
+            firstrow = ''
+            for m_num, m in enumerate(self.model.iMDPs):
+                firstrow += str(counter) + ' 0 ' + str(counter) + ' [1.0,1.0]\n' #fixes deadlock only in this state
+                counter += len(m.States)+1
         else:
             firstrow = '0 0 0 1.0\n'
 
-        self.write_file(header+firstrow+transition_file_list, self.transition_filename)
+        self.write_file(header+firstrow, self.transition_filename)
+        for sublist in tqdm(transition_file_list):
+            for subsublist in sublist:
+                for item in subsublist:
+                    self.write_file(item+'\n', self.transition_filename, 'a')
 
         self.specification = self.writePRISM_specification()
 
