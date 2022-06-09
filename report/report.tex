@@ -10,7 +10,9 @@
 \usepackage{titlesec} % Allows customization of titles
 \usepackage{amssymb}
 \usepackage{amsmath}
+\usepackage{amsthm}
 \newtheorem{remark}{Remark}
+\newtheorem{definition}{Definiton}
 \newcommand\given[1][]{\:#1\vert\:}
 
 %----------------------------------------------------------------------------------------
@@ -49,11 +51,11 @@
 \maketitle
 
 \section{Introduction}
-Many complex systems can be modelled as \emph{hybrid systems}. Such hybrid systems consist of continuous and discrete time processes where the evolution of the continuous system can depend on the discrete process. The discrete process can be considered as defining different \emph{modes} of operation of the continuous system. We consider such hybrid systems in the case where the discrete process can be controlled (or steered) and where there is no control over the evolution of this discrete process (unsteered). In both cases we allow for a continuous control input at all timesteps.
+Many complex systems can be modelled as \emph{stochastic hybrid systems}. Such systems consist of continuous and discrete time processes where the evolution of the continuous system can depend on the discrete process. The discrete process can be considered as defining different \emph{modes} of operation of the continuous system. We consider such hybrid systems in the case where the discrete process can be controlled (or steered) and where there is no control over the evolution of this discrete process (unsteered). In both cases we allow for a continuous control input at all timesteps.
 
 In order to use these systems we are interested in designing some control input such that we can satisfy some property. Of particular interest in this work is the reach-avoid property. This property requires a controller which can \emph{reach} some goal states while \emph{avoiding} some unsafe states. For example, in the case of unmanned aerial vehicle (UAV) control, we might want to fly to a given destination whilst avoiding fixed obstacles.
 
-In many systems (especially those which are safety-critical), the design of such control inputs requires some consideration to underlying randomness. Here we model this randomness as \emph{process noise}, which appears as an additive term in the system dynamics. This process noise can vary between the different modes of the hybrid system. One possible source of this noise (in our UAV case) is turbulence and/ or wind gusts. By using a hybrid system we can thus consider modes with identical dynamics but differing levels wind speeds.
+In many systems (especially those which are safety-critical), the design of such control inputs requires some consideration to underlying randomness. Here we model this randomness as \emph{process noise}, which appears as an additive term in the system dynamics. This process noise can vary between the different modes of the stochastic hybrid system. One possible source of this noise (in our UAV case) is turbulence and/ or wind gusts. By using a hybrid system we can thus consider modes with identical dynamics but differing levels wind speeds.
 
 In addition to this process noise, we consider uncertainty in the transition between modes. This allows for the design of controllers which can be robust to a changing mode of operation (in the unsteered case). As well as those that can optimally choose a mode of operation (in the steered case). In our UAV example, this means that we can design a controller which is robust to a changing wind speed, but is able to take sensible actions in low wind conditions.
 
@@ -62,7 +64,7 @@ The hybrid switching is treated as having a known probabillity, and thus is mode
 
 \subsection{Contributions}
 
-In this work we extend the work of \cite{} to the case of state-indepenedent hybrid systems, in doing so we make the methods applicable to a much broader range of systems. We also provide some case studies later to demonstrate the effectiveness of our methods on these complex systems.
+In this work we extend the work of \cite{} to the case of state-indepenedent stochastic hybrid systems, in doing so we make the methods applicable to a much broader range of systems. We also provide some case studies later to demonstrate the effectiveness of our methods on these complex systems.
 
 \subsection{Related Works}
 
@@ -95,9 +97,43 @@ This work has the potential to lead to job losses, since the control of hybrid s
 
 \subsection{Overview}
 
-In summary, we consider that the publication of this work is responsible and ethical. The potential for increased safety of many systems outweighs the potential negative implications of misuse. However, in order to ensure that our proposed method is used correctly we would always encourage taking the precautions outlined in \autoref{subsec:legal}
+In summary, we consider that the publication of this work is responsible and ethical. The potential for increased safety of many systems outweighs the potential negative implications of misuse. However, in order to ensure that our proposed method is used correctly we would always encourage taking the precautions outlined in \autoref{subsec:legal}.
 
 \section{Foundations}
+
+\subsection{Definitions}
+
+\begin{definition}[Linear Time Invariant Dynamical System]
+	\begin{equation}
+		\begin{aligned}
+			x(k+1)&=Ax(k)+Bu(k)+q+w\\
+			x &\in \mathbb{R}^n\\
+			u &\in \mathbb{R}^p\\
+			A &\in \mathbb{R}^{n \times n}\\
+			B &\in \mathbb{R}^{n \times p}\\
+			q &\in \mathbb{R}^n\\
+			w &\in \mathbb{R}^n\\
+			k &\in \mathbb{N}
+		\end{aligned}
+	\end{equation}
+\end{definition}
+
+\begin{definition}[Discrete Time Hybrid System (DTHS)]
+
+\end{definition}
+
+
+\begin{remark}[Set of Dynamics]
+
+\end{remark}
+
+\begin{remark}[Special cases]
+
+\end{remark}
+
+\begin{definition}[iMDP]
+
+\end{definition}
 
 \begin{remark}[Product of iMDPs]
 	Let $\mathcal{M}^1_\mathbb{I}=(S_1,A_1,s_1,\mathcal{P}_1)$ and $\mathcal{M}^2_\mathbb{I}=(S_2,A_2,s_2,\mathcal{P}_2)$ be two independent iMDPs. If we define the joint state and action spaces $S_\times=(S_1,S_2)$, $A_\times=(A_1,A_2)$ then we can define the joint interval probabilities as
