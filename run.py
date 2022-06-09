@@ -123,8 +123,8 @@ def get_imdp(load_sel, model):
             init_mode = 0
             dyn = Dynamics.unsteered_test(init_state, init_mode, sigma=sigma)
             init = [init_state, init_mode]
-            ss = StateSpace.ContStateSpace(2, ((-20, -20), (20, 20)), [], [((10, 10), (11, 11)) ])
-            grid=(40,40)
+            ss = StateSpace.ContStateSpace(2, ((-20, -20), (20, 20)), [], [((9, 9), (11, 11)) ])
+            grid=(200,200)
     if model == "steered_test":
             sigma = noise_lvl*0.01
             init_state = np.array([[-10,10]]).T
@@ -132,7 +132,7 @@ def get_imdp(load_sel, model):
             dyn = Dynamics.steered_test(init_state, init_mode, sigma=sigma)
             init = [init_state, init_mode]
             ss = StateSpace.ContStateSpace(2, ((-20, -20), (20, 20)), [], [((9, 9), (11, 11)) ])
-            grid=(40,40)
+            grid=(400,400)
 
     if load_sel == "N":
         if dyn.hybrid == False:
@@ -155,13 +155,14 @@ def main():
     model = opt.model_choice()
     load_sel = opt.load_choice()
     imdp_abstr, ss, dyn, init_state, grid, model_name = get_imdp(load_sel, model)
-    opt_pol, opt_delta, opt_rew = run(init_state, dyn, imdp_abstr, grid, lb_sat_prob, model_name, max_samples=101)
-    if model == "UAV_gauss" or model=="UAV_dryden":
+    opt_pol, opt_rew = run(init_state, dyn, imdp_abstr, grid, lb_sat_prob, model_name, max_iters=1)
+    if model.split("_")[0] == "UAV":
         ax = ss.draw_space([0,1,2])
     else:
         ax=None
     plot_funcs.create_plots(model, opt_pol, opt_rew, imdp_abstr, init_state, ax)
     # draw some other nice things here
+    import pdb; pdb.set_trace()
     return 0
 
 if __name__ == '__main__':

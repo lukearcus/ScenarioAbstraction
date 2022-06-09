@@ -10,8 +10,11 @@ import math
 
 
 def dec_round(num, decimals):
+    """
+    Decimal rounding, lowerbounds at 10^-decimals
+    """
     power = 10**decimals
-    return math.trunc(power*num)/power
+    return max(10**-decimals,math.trunc(power*num)/power)
 
 
 class iMDP:
@@ -50,7 +53,7 @@ class iMDP:
         self.Actions, self.Actions_forward, self.enabled_actions = self.determine_actions()
         act_end = time.perf_counter()
         print("Actions set up in "+str(act_end-act_start))
-
+    
     def update_probs(self, N):
         """
         Updates probabilities with new number of samples, N
@@ -435,8 +438,7 @@ class PRISM_writer:
         policy = np.genfromtxt(policy_file, delimiter=',', dtype='str')
         policy = np.flipud(policy)
 
-        optimal_policy= np.zeros(np.shape(policy))
-        optimal_delta= np.zeros(np.shape(policy))
+        optimal_policy= np.zeros(np.shape(policy)+tuple([2]))
         optimal_reward = np.zeros(np.shape(policy)[1])
 
         optimal_reward = np.genfromtxt(vector_file).flatten()
@@ -444,12 +446,11 @@ class PRISM_writer:
             for j, value in enumerate(row):
                 if value != '':
                     value_split = value.split('_')
-                    optimal_policy[i,j] = int(value_split[1])
-                    optimal_delta[i,j] = int(value_split[3])
+                    optimal_policy[i,j, 0] = int(value_split[1])
+                    optimal_policy[i,j, 1] = int(value_split[-1])
                 else:
                     optimal_policy[i,j] = -1
-                    optimal_delta[i,j] = -1
-        return optimal_policy, optimal_delta, optimal_reward
+        return optimal_policy, optimal_reward
 
     def solve_PRISM(self,java_memory=2, prism_folder="~/Downloads/prism-imc/prism"):
         """
@@ -563,7 +564,7 @@ class hybrid_PRISM_writer(PRISM_writer):
                                 count_inn = 0
                                 for m_next_id, trans_prob in enumerate(trans_probs):
                                     subsubstring += [str(counter+i+1) + ' ' + str(choice)+ ' '+str(count_inn+i+1)+\
-                                                     ' ['+ str(trans_prob) + ','+str(trans_prob)+'] '+action_label]
+                                                     ' ['+ str(max(1e-6,trans_prob)) + ','+str(trans_prob)+'] '+action_label]
                                     count_inn += len(m.States)+1
                                 nr_choices_absolute += 1
                                 choice += 1

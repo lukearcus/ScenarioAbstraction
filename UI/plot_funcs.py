@@ -21,7 +21,7 @@ def create_plots(model, opt_pol, opt_rew, imdp, init, ax=None):
         nr_states = len(imdp.iMDPs[0].States)+1
         fig, axs = plt.subplots(1, nr_rooms)
         for i in range(nr_rooms):
-            axs[i] = heatmap(opt_rew[nr_states*i:nr_states*(i+1)], (40,40), [-20,20], [20,-20], axs[i])
+            axs[i] = heatmap(opt_rew[nr_states*i:nr_states*(i+1)], (200,200), [-20,20], [20,-20], axs[i])
 
     plt.show()
 
@@ -40,17 +40,17 @@ def plot_policy(policy, init, imdp, ax=None):
         fig=plt.figure()
         ax = plt.axes(projection='3d')
     ind = int(imdp.find_state_index(init[0].T)[0][0][0])
-    import pdb; pdb.set_trace()
-    x = [imdp.States[ind][0]]
-    y = [imdp.States[ind][1]]
-    z = [imdp.States[ind][2]]
+    imdp_0 = imdp.iMDPs[0]
+    x = [imdp_0.States[ind][0]]
+    y = [imdp_0.States[ind][1]]
+    z = [imdp_0.States[ind][2]]
     for timestep in policy:
         ind = int(timestep[ind])
         if ind == -1:
             break
-        x += [imdp.States[ind][0]]
-        y += [imdp.States[ind][1]]
-        z += [imdp.States[ind][2]]
+        x += [imdp_0.States[ind][0]]
+        y += [imdp_0.States[ind][1]]
+        z += [imdp_0.States[ind][2]]
     ax.plot3D(x,y,z)
 
 def drone_plot(data, T, ax=None):

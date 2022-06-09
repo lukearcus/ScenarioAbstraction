@@ -7,7 +7,10 @@ def run(init_state, dyn, test_imdp,  grid, min_lb, model, init_samples=25, max_i
     i = 0
     samples = init_samples
     if dyn.hybrid:
-        init_id = test_imdp.find_state_index(init_state[0].T)[0][0]+1
+        try:
+            init_id = test_imdp.find_state_index(init_state[0].T)[0][0]+1
+        except(TypeError):
+            init_id = test_imdp.find_state_index(init_state[0].T+1e-5)[0][0]+1 #perturb slightly
         init_mode = init_state[1]
         init_id += init_mode*(len(test_imdp.iMDPs[0].States)+1)
     else:
@@ -28,11 +31,11 @@ def run(init_state, dyn, test_imdp,  grid, min_lb, model, init_samples=25, max_i
         writer.write()
         print("Solving iMDP")
         writer.solve_PRISM(PRISM_MEM)
-        opt_pol, opt_delta, rew = writer.read()
+        opt_pol, rew = writer.read()
         lb_sat_prob = rew[tuple(init_id)]
         print("lower bound on initial state: "+str(lb_sat_prob))
         i+=1
         #i=200 # so we only run 1 loop
         samples *= 2
-    return opt_pol, opt_delta, rew
+    return opt_pol, rew
 
