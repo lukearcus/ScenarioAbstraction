@@ -124,7 +124,7 @@ def get_imdp(load_sel, model):
             dyn = Dynamics.unsteered_test(init_state, init_mode, sigma=sigma)
             init = [init_state, init_mode]
             ss = StateSpace.ContStateSpace(2, ((-20, -20), (20, 20)), [], [((9, 9), (11, 11)) ])
-            grid=(200,200)
+            grid=(100,100)
     if model == "steered_test":
             sigma = noise_lvl*0.01
             init_state = np.array([[-10,10]]).T
@@ -132,7 +132,7 @@ def get_imdp(load_sel, model):
             dyn = Dynamics.steered_test(init_state, init_mode, sigma=sigma)
             init = [init_state, init_mode]
             ss = StateSpace.ContStateSpace(2, ((-20, -20), (20, 20)), [], [((9, 9), (11, 11)) ])
-            grid=(400,400)
+            grid=(100,100)
 
     if load_sel == "N":
         if dyn.hybrid == False:

@@ -21,7 +21,7 @@ def create_plots(model, opt_pol, opt_rew, imdp, init, ax=None):
         nr_states = len(imdp.iMDPs[0].States)+1
         fig, axs = plt.subplots(1, nr_rooms)
         for i in range(nr_rooms):
-            axs[i] = heatmap(opt_rew[nr_states*i:nr_states*(i+1)], (200,200), [-20,20], [20,-20], axs[i])
+            axs[i] = heatmap(opt_rew[nr_states*i:nr_states*(i+1)], (100,100), [-20,20], [20,-20], axs[i])
 
     plt.show()
 
