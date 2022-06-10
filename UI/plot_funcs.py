@@ -32,26 +32,28 @@ def heatmap(rewards, grid,xlim,ylim, ax=None):
     if ax is None:
         fig=plt.figure()
         ax=plt.axes()
-    ax.imshow(rewards[1:].reshape(grid), extent=xlim+ylim) 
+    ax.imshow(rewards[1:].reshape(grid), extent=xlim+ylim, vmin=0,vmax=1) 
     return ax
 
-def plot_policy(policy, init, imdp, ax=None):
+def plot_policy(policy, init, imdp_abstr, ax=None):
     if ax is None:
         fig=plt.figure()
         ax = plt.axes(projection='3d')
-    ind = int(imdp.find_state_index(init[0].T)[0][0][0])
-    imdp_0 = imdp.iMDPs[0]
-    x = [imdp_0.States[ind][0]]
-    y = [imdp_0.States[ind][1]]
-    z = [imdp_0.States[ind][2]]
-    for timestep in policy:
-        ind = int(timestep[ind])
-        if ind == -1:
-            break
-        x += [imdp_0.States[ind][0]]
-        y += [imdp_0.States[ind][1]]
-        z += [imdp_0.States[ind][2]]
-    ax.plot3D(x,y,z)
+    counter = 0
+    for imdp in imdp_abstr.iMDPs:
+        ind = int(imdp.find_state_index(init[0].T)[0][0][0])
+        x = [imdp.States[ind][0]]
+        y = [imdp.States[ind][1]]
+        z = [imdp.States[ind][2]]
+        for timestep in policy:
+            ind = int(timestep[ind+counter][0])
+            if ind == -1:
+                break
+            x += [imdp.States[ind][0]]
+            y += [imdp.States[ind][1]]
+            z += [imdp.States[ind][2]]
+        counter += len(imdp.States)+1
+        ax.plot3D(x,y,z)
 
 def drone_plot(data, T, ax=None):
     """
