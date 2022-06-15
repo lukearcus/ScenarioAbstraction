@@ -1,3 +1,4 @@
+import sys
 import numpy as np
 import itertools
 from scipy.stats import beta
@@ -45,12 +46,26 @@ class iMDP:
         print("Adjacency set up in "+str(adj_end-state_end))
         self.Goals = self.find_goals()
         self.Unsafes = self.find_unsafes()
-        self.A_pinv = np.linalg.pinv(self.dyn.A)
-        self.B_pinv = np.linalg.pinv(self.dyn.B_full_rank)
-
-        np_incs = np.stack(([0 for i in range(self.N_d)],self.part_size)).T
         act_start = time.perf_counter()
-        self.Actions, self.Actions_forward, self.enabled_actions = self.determine_actions()
+        if self.dyn.Convex_comb:
+            self.enabled_actions = [[] for _ in self.dyn.A_list]
+            enabled_actions_lower = set(range(len(self.States)+1))
+            for i, A in enumerate(self.dyn.A_list):
+                A_pinv = np.linalg.pinv(A)
+                B = self.dyn.B_list[i]
+                Q = self.dyn.Q_list[i]
+                Actions_inv, Actions_for, self.enabled_actions[i] = self.determine_actions(A_pinv, A, B, Q)
+                if i == 0:
+                    self.Actions = Actions_inv
+                    self.Actions_forward = Actions_for
+                else:
+                    self.Actions = {i : set(self.Actions[i])&set(Actions_inv[i]) for i in Actions_inv}
+                    self.Actions_forward = {i: set(self.Actions_forward[i])&set(Actions_for[i]) for i in Actions_for}
+                enabled_actions_lower = enabled_actions_lower&set(self.enabled_actions[i])
+            self.enabled_actions = enabled_actions_lower
+        else:
+            A_pinv = np.linalg.pinv(self.dyn.A)
+            self.Actions, self.Actions_forward, self.enabled_actions = self.determine_actions(A_pinv, self.dyn.A, self.dyn.B, self.dyn.Q)
         act_end = time.perf_counter()
         print("Actions set up in "+str(act_end-act_start))
     
@@ -270,30 +285,30 @@ class iMDP:
             list_out =  [state_inds_to_check[np.where(abs_sum[i,:])[0][0]] if np.any(abs_sum[i,:]) else -1 for i in range(num_ins) ]
         return  list_out
 
-    def determine_actions(self):
+    def determine_actions(self, A_pinv, A, B, Q):
         """
         Determines iMDP actions, if dimensions are unequal might have some issues
         """
         print("Determining actions")
         u = [[self.dyn.u_min[i], self.dyn.u_max[i]] for i in range(len(self.dyn.u_max))]
-        x_inv_area = np.zeros((2**len(self.dyn.u_max), self.dyn.A.shape[0]))
+        x_inv_area = np.zeros((2**len(self.dyn.u_max), A.shape[0]))
         for i, u_elem in enumerate(itertools.product(*u)):
             list_elem = list(u_elem)
-            x_inv_area[i,:] = (self.A_pinv @ (self.dyn.B @ np.array(list_elem) + self.dyn.Q)).flatten()
+            x_inv_area[i,:] = (A_pinv @ (B @ np.array(list_elem) + Q)).flatten()
         corners_array = self.all_corners_flat
 
-        dim_equal = self.dyn.A.shape[0] == self.dyn.B.shape[1]
+        dim_equal = A.shape[0] == B.shape[1]
         if dim_equal:
-            n = self.dyn.A.shape[0]
+            n = A.shape[0]
             u_avg = np.array(self.dyn.u_max + self.dyn.u_min)/2
             u_avg = u_avg.T
             u = np.tile(u_avg, (n, 1)) + np.diag((self.dyn.u_max.T - u_avg)[0])
 
-            origin = self.A_pinv @ (self.dyn.B @ np.array(u_avg).T)
+            origin = A_pinv @ (B @ np.array(u_avg).T)
 
             basis_vectors = np.zeros((n,n))
             for i, elem in enumerate(u):
-                point = self.A_pinv @ (self.dyn.B @ np.expand_dims(elem,1))
+                point = A_pinv @ (B @ np.expand_dims(elem,1))
                 basis_vectors[i,:] = point.flatten() - origin.flatten()
             parallelo2cube = np.linalg.inv(basis_vectors) # changed inv to pinv (is this allowed????)
             x_inv_area_normalised = x_inv_area @ parallelo2cube
@@ -308,7 +323,7 @@ class iMDP:
         if dim_equal:
             nr_acts = len(actions_inv)
             for act in tqdm(actions_inv):
-                A_inv_d = self.A_pinv @ np.array(self.States[act])
+                A_inv_d = A_pinv @ np.array(self.States[act])
                 all_vert_normed = (A_inv_d @ parallelo2cube) - allRegionVertices
                 poly_reshape = np.reshape(all_vert_normed, (len(self.States),n*(2**n)))
                 enabled_in = np.maximum(np.max(poly_reshape, axis=1), -np.min(poly_reshape, axis=1)) <= 1.0
@@ -321,7 +336,7 @@ class iMDP:
         else:
             for act in tqdm(actions_inv):
                 state_counter = {i: 0 for s_num, i in enumerate(self.States) if s_num not in self.Unsafes}
-                A_inv_d = self.A_pinv @ np.array(act)
+                A_inv_d = A_pinv @ np.array(act)
                 all_vertices = A_inv_d - corners_array
                 in_hull = x_inv_hull.find_simplex(all_vertices) >= 0
                 if np.any(in_hull):

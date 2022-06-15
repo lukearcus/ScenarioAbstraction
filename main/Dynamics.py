@@ -244,6 +244,7 @@ class dynamic_base:
     """
     Base class defining dynamics
     """
+    Convex_comb = False
     hybrid=False
     horizon = 64
     grouped_timesteps = 1
@@ -262,6 +263,114 @@ class dynamic_base:
         Add noise
         """
         pass
+
+class Fixed_Unkown_Conv_Comb(dynamic_base):
+    """
+    Basic LTI class which takes matrices as inputs
+    """
+    convex_comb=True
+    def __init__(self, init, _A_list, _B_list, _Q_list, _u_max, _u_min, _sigma, weights=None):
+        self.A_list = _A_list
+        self.B_list = _B_list
+        self.Q_list = _Q_list
+    
+        if weights is None:
+            weights = [random.random for i in self.A_list]
+            weights_sum = sum(weights)
+            weights = [weights/weights_sum for weight in weights]
+            self.A = sum([weight * self.A_list[i] for i, weight in enumerate(weights)])
+            self.B = sum([weight * self.B_list[i] for i, weight in enumerate(weights)])
+            self.Q = sum([weight * self.Q_list[i] for i, weight in enumerate(weights)])
+
+        self.u_max = _u_max
+        self.u_min = _u_min
+        self.sigma = np.eye(2)*_sigma
+        self.state = init
+        self.mu = np.zeros(self.state.shape)
+        if _A.shape[1] <= _B.shape[1]:
+            self.A_full_rank = _A
+            self.B_full_rank = _B
+            self.grouped_timesteps=1
+        else:
+            self.grouped_timestpes = int(math.ceil(_A.shape[1]/_B.shape[1]))
+            As = []
+            Bs = []
+            for i in range(self.grouped_timesteps):
+                As += np.linalg.matrix_power(_A, i+1)
+                Bs += np.linalg.matrix_power(_A, i)*_B
+
+            As.reverse()
+            Bs.reverse()
+
+            self.A_full_rank = np.hstack(tuple(As))
+            self.B_full_rank = np.hstack(tuple(Bs))
+
+    def state_update(self, control):
+        self.state = self.A*self.state + self.B*control + self.Q + self.noise()
+
+    def noise(self):
+        return np.random.multivariate_normal(self.mu, self.sigma)
+
+class Time_Var_Conv_Comb(dynamic_base):
+    Convex_comb = True
+    def __init__(self, init, _A_list, _B_list, _Q_list, _u_max, _u_min, _sigma):
+        self.A_list = _A_list
+        self.B_list = _B_list
+        self.Q_list = _Q_list
+    
+
+        self.u_max = _u_max
+        self.u_min = _u_min
+        self.sigma = np.eye(2)*_sigma
+        self.state = init
+        self.mu = np.zeros(self.state.shape)
+        if _A_list[0].shape[1] <= _B_list[0].shape[1]:
+            self.A_full_rank = []
+            self.B_full_rank = []
+            for i, _A in enumerate(self.A_list):
+                self.A_full_rank.append(_A)
+                self.B_full_rank.append(self.B_list[i])
+            self.grouped_timesteps=1
+        else:
+            self.A_full_rank = []
+            self.B_full_rank = []
+            for i, _A in enumerate(self.A_list):
+                _B = self.B_list[i]
+                self.grouped_timestpes = int(math.ceil(_A.shape[1]/_B.shape[1]))
+                As = []
+                Bs = []
+                for i in range(self.grouped_timesteps):
+                    As += np.linalg.matrix_power(_A, i+1)
+                    Bs += np.linalg.matrix_power(_A, i)*_B
+
+                As.reverse()
+                Bs.reverse()
+
+                self.A_full_rank.append(np.hstack(tuple(As)))
+                self.B_full_rank.append(np.hstack(tuple(Bs)))
+
+    def state_update(self, control):
+        weights = [random.random for i in self.A_list]
+        weights_sum = sum(weights)
+        weights = [weights/weights_sum for weight in weights]
+        A = sum([weight * self.A_list[i] for i, weight in enumerate(weights)])
+        B = sum([weight * self.B_list[i] for i, weight in enumerate(weights)])
+        Q = sum([weight * self.Q_list[i] for i, weight in enumerate(weights)])
+        self.state = A*self.state + B*control + Q + self.noise()
+
+    def noise(self):
+        return np.random.multivariate_normal(self.mu, self.sigma)
+
+class conv_test(Time_Var_Conv_Comb):
+    def __init__(self, init, sigma):
+        self.T = 1
+        A_mats = [np.array([[0.5, 0],[0,1]]),np.array([[1,0],[0,0.5]])]
+        B_mats = [np.eye(2),np.eye(2)]
+        Q_mats = [np.zeros((2,1)), np.zeros((2,1))]
+        u_max = np.ones((2,1))*5
+        u_min = np.ones((2,1))*-5
+        super().__init__(init, A_mats, B_mats, Q_mats, u_max, u_min, sigma)
+
 
 class LTI_gauss(dynamic_base):
     """
@@ -300,6 +409,15 @@ class LTI_gauss(dynamic_base):
     def noise(self):
         return np.random.multivariate_normal(self.mu, self.sigma)
 
+class non_conv_test(LTI_gauss):
+    def __init__(self, init, sigma):
+        self.T = 1
+        A = np.array([[0.5, 0],[0,1]])
+        B = np.eye(2)
+        Q = np.zeros((2,1))
+        u_max = np.ones((2,1))*5
+        u_min = np.ones((2,1))*-5
+        super().__init__(init, A, B, Q, u_max, u_min, np.eye(2)*sigma)
 class heat_1_room(dynamic_base):
     """
     1 room BAS heating

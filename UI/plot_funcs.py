@@ -8,6 +8,8 @@ def create_plots(model, opt_pol, opt_rew, imdp, init, ax=None):
     """
     if model=="1room heating":
         heatmap(opt_rew, (19,20), [36,40], [22.9,19.1], ax)
+    if  model=="conv_test":
+        heatmap(opt_rew, (100,100), [-20,20], [20,-20], ax)
     if model.split("_")[0]=="UAV":
         plot_policy(opt_pol, init, imdp, ax)
     if model=="n_room_heating" or model=="steered_n_room_heating":

@@ -14,7 +14,7 @@ def run(init_state, dyn, test_imdp,  grid, min_lb, model, init_samples=25, max_i
         init_mode = init_state[1]
         init_id += init_mode*(len(test_imdp.iMDPs[0].States)+1)
     else:
-        init_id = test_imdp.find_state_index(init_state.T)+1
+        init_id = test_imdp.find_state_index(init_state[0].T)[0][0]+1
     while lb_sat_prob < min_lb and i < max_iters and samples < max_samples:
         print("Computing new probabilities with " + str(samples) + " samples")
         test_imdp.update_probs(samples)
