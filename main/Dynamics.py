@@ -104,6 +104,21 @@ class steered_MC(hybrid_dynamic_base):
         # store current state in individual system state
         self.individual_systems[self.mode].state = self.state
 
+class steered_base(hybrid_dynamic_base):
+
+    steered = True
+    def state_update(self, cont_control, disc_control):
+        # update continuous state
+        curr_dyn = self.individual_systems[self.mode]
+        curr_dyn.state_update(cont_control)
+        self.state = curr_dyn.state
+
+        # update discrete state
+        self.mode = np.random.choice(self.N_modes, p = self.transition_matrices[self.mode][disc_control])
+        
+        # store current state in individual system state
+        self.individual_systems[self.mode].state = self.state
+
 class unsteered_test(hybrid_dynamic_base):
     def __init__(self, init_state, init_mode, sigma=0.1):
         self.state=init_state
@@ -119,24 +134,11 @@ class unsteered_test(hybrid_dynamic_base):
         q = [np.array([[0,0]]).T for i in range(2)]
         self.transition_matrix = np.array([[0.9999, 0.0001],[0.0001,0.9999]])
         self.individual_systems = [LTI_gauss(init_state, a[i], b[i], q[i], u_max[i], u_min[i], sigma) for i in range(2)]
-        
-    def state_update(self, cont_control):
-        # update continuous state
-        curr_dyn = self.individual_systems[self.mode]
-        curr_dyn.state_update(cont_control)
-        self.state = curr_dyn.state
 
-        # update discrete state
-        self.mode = np.random.choice(self.n_modes, p = self.transition_matrix[self.mode])
-        
-        # store current state in individual system state
-        self.individual_systems[self.mode].state = self.state
-
-class steered_test(hybrid_dynamic_base):
+class steered_test(steered_base):
     """
     test with arbitrary dynamics
     """
-    steered=True
     def __init__(self, init_state, init_mode, sigma=0.1):
         self.transition_matrices = [np.array([[0.9,0.1],[0.1,0.9]]) for i in range(2)]
         self.state=init_state
@@ -151,34 +153,7 @@ class steered_test(hybrid_dynamic_base):
         b = [np.array([[1,0],[0,1]]), np.array([[1,0],[0, 1]])]
         q = [np.array([[0,0]]).T for i in range(2)]
         #self.transition_matrix = np.array([[0.5, 0.5],[0.5,0.5]])
-        self.individual_systems = [LTI_gauss(init_state, a[i], b[i], q[i], u_max[i], u_min[i], sigma) for i in range(2)]
-        
-    def state_update(self, cont_control, disc_control):
-        # update continuous state
-        curr_dyn = self.individual_systems[self.mode]
-        curr_dyn.state_update(cont_control)
-        self.state = curr_dyn.state
-
-        # update discrete state
-        self.mode = np.random.choice(self.n_modes, p = self.transition_matrices[self.mode][disc_control])
-        
-        # store current state in individual system state
-        self.individual_systems[self.mode].state = self.state
-
-class steered_base(hybrid_dynamic_base):
-
-    steered = True
-    def state_update(self, cont_control, disc_control):
-        # update continuous state
-        curr_dyn = self.individual_systems[self.mode]
-        curr_dyn.state_update(cont_control)
-        self.state = curr_dyn.state
-
-        # update discrete state
-        self.mode = np.random.choice(self.N_modes, p = self.transition_matrices[self.mode][disc_control])
-        
-        # store current state in individual system state
-        self.individual_systems[self.mode].state = self.state
+        self.individual_systems = [LTI_gauss(init_state, a[i], b[i], q[i], u_max[i], u_min[i], sigma) for i in range(2)]        
 
 class steered_drone_speed(steered_base):
     """
@@ -318,11 +293,21 @@ class Time_Var_Conv_Comb(dynamic_base):
     """
     Convex_comb = True
     def __init__(self, init, _A_list, _B_list, _Q_list, _u_max, _u_min, _sigma):
+        if type(_A_list) is not list:
+            _A_list = [_A_list]
+        if type(_B_list) is not list:
+            _B_list = [_B_list]
+        if type(_Q_list) is not list:
+            _Q_list = [_Q_list]
         self.A_list = _A_list
         self.B_list = _B_list
         self.Q_list = _Q_list
-    
-
+        while len(self.A_list) < len(self.B_list):
+            self.A_list.append(self.A_list[0])
+        while len(self.B_list) < len(self.A_list):
+            self.B_list.append(self.B_list[0])
+        while len(self.Q_list) < len(self.A_list):
+            self.Q_list.append(self.Q_list[0])
         self.u_max = _u_max
         self.u_min = _u_min
         self.sigma = np.eye(2)*_sigma
@@ -368,16 +353,36 @@ class Time_Var_Conv_Comb(dynamic_base):
 class conv_test(Time_Var_Conv_Comb):
     def __init__(self, init, sigma):
         self.T = 1
-        A_mats = [np.array([[1, 0],[0, 1]]), np.array([[1, 0.5],[0.5, 1]])]
-        B_mats = [np.array([[1,0],[0,1]]), np.array([[1,0],[0, 1]])]
-        Q_mats = [np.array([[0,0]]).T for i in range(2)]
-        
+        A_mats = [np.array([[1, 0],[0, 1]]), np.array([[1, 0.5],[0.5, 1]])] 
+        B = [np.array([[1,0],[0,1]]), np.array([[1,0],[0, 1]])]
+        Q = [np.array([[0,0]]).T for i in range(2)]
         #A_mats = [np.array([[0.5, 0],[0,1]]),np.array([[1,0],[0,0.5]])]
         #B_mats = [np.eye(2),np.eye(2)]
         #Q_mats = [np.zeros((2,1)), np.zeros((2,1))]
         u_max = np.ones((2,1))*5
         u_min = np.ones((2,1))*-5
         super().__init__(init, A_mats, B_mats, Q_mats, u_max, u_min, sigma)
+
+class steered_conv_test(steered_base):
+    """
+    test with arbitrary dynamics
+    """
+    def __init__(self, init_state, init_mode, sigma=0.1):
+        self.transition_matrices = [np.array([[0.9,0.1],[0.1,0.9]]) for i in range(2)]
+        self.state=init_state
+        self.mode=init_mode
+        self.T=0.1
+        self.N_modes = 2
+        u_min = [np.ones((2,1))*-3 for i in range(2)]
+        u_max = [np.ones((2,1))*3 for i in range(2)]
+        sigma = np.diag([sigma for i in range(2)]) # assume noise is equal in all modes
+        ambient_temp = 6
+        A = [[np.array([[0.8, 0],[0, 1.2]]), np.array([[1.2, 0],[0,0.8]])],\
+                [ np.array([[1, 0.25],[0.25, 0.7]]), np.array([[1,0.5],[0.5,1]]),np.array([[0.7,0.5],[0.5,1]])]]
+        B = [[np.eye(2),np.array([[0.9, 0.1],[0.1,0.9]])], [np.eye(2),np.array([[0.9,0],[0.2, 0.8]])]]
+        Q = [[np.array([[0,0]]).T for i in range(2)] for i in range(2)]
+        #self.transition_matrix = np.array([[0.5, 0.5],[0.5,0.5]])
+        self.individual_systems = [Time_Var_Conv_Comb(init_state, A[i], B[i], Q[i], u_max[i], u_min[i], sigma) for i in range(2)]        
 
 
 class LTI_gauss(dynamic_base):

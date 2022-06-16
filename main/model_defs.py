@@ -138,6 +138,14 @@ def get_imdp(load_sel, model, noise_lvl, save_sel):
         dyn = Dynamics.non_conv_test(init, sigma=sigma)
         ss = StateSpace.ContStateSpace(2, ((-20, -20), (20, 20)), [((-1,-1),(1,1))], [((9, 9), (11, 11)) ])
         grid=(100,100)
+    if model == "steered_conv_test":
+        sigma = noise_lvl*0.01
+        init_state = np.array([[-10,10]]).T
+        init_mode = 0
+        init = [init_state, init_mode]
+        dyn = Dynamics.steered_conv_test(init_state, init_mode, sigma=sigma)
+        ss = StateSpace.ContStateSpace(2, ((-20, -20), (20, 20)), [((-5,-5),(1,1))], [((9, 9), (11, 11)) ])
+        grid=(100,100)
         
     if load_sel == "N":
         if dyn.hybrid == False:

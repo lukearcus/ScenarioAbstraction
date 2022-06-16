@@ -56,7 +56,8 @@ def model_choice():
                   "steered_test",
                   "unsteered_test",
                   "conv_test",
-                  "non_conv_test"
+                  "non_conv_test",
+                  "steered_conv_test"
                   ]
         for i, model in enumerate(models):
             print(str(i) + "- "+model)
