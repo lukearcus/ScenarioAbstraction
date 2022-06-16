@@ -1,6 +1,8 @@
+import sys
 import numpy as np
 import UI.plot_funcs as plot_funcs
 import UI.choices as opt
+from main.model_defs import get_imdp
 from main.run_loop import run
 
 
@@ -12,7 +14,10 @@ def main():
     lb_sat_prob=0.5
     model = opt.model_choice()
     load_sel = opt.load_choice()
-    imdp_abstr, ss, dyn, init_state, grid, model_name = opt.get_imdp(load_sel, model)
+    save_sel = opt.save_choice()
+    if model != "1room heating":
+        noise_lvl = opt.noise_choice()
+    imdp_abstr, ss, dyn, init_state, grid, model_name = get_imdp(load_sel, model, noise_lvl, save_sel)
     opt_pol, opt_rew = run(init_state, dyn, imdp_abstr, grid, lb_sat_prob, model_name, max_iters=1)
     if model.split("_")[0] == "UAV":
         ax = ss.draw_space([0,1,2])

@@ -397,7 +397,7 @@ class hybrid_iMDP:
         self.N_modes = Dynamics.N_modes
 
     def find_state_index(self, x):
-        return self.iMDPs[0].find_state_index(x)
+        return self.iMDPs[0].find_state_index(x) # assuming equal partitioning across modes
 
     def update_probs(self, N):
         for imdp in self.iMDPs:

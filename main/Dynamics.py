@@ -266,7 +266,8 @@ class dynamic_base:
 
 class Fixed_Unkown_Conv_Comb(dynamic_base):
     """
-    Basic LTI class which takes matrices as inputs
+    Dynamics are fixed but unkown, but are a convex combination of known matrices
+    This can't be solved since we need to steer dynamics to fixed points
     """
     convex_comb=True
     def __init__(self, init, _A_list, _B_list, _Q_list, _u_max, _u_min, _sigma, weights=None):
@@ -312,6 +313,9 @@ class Fixed_Unkown_Conv_Comb(dynamic_base):
         return np.random.multivariate_normal(self.mu, self.sigma)
 
 class Time_Var_Conv_Comb(dynamic_base):
+    """
+    Time varying dynamics, but always a convex combination of other matrices
+    """
     Convex_comb = True
     def __init__(self, init, _A_list, _B_list, _Q_list, _u_max, _u_min, _sigma):
         self.A_list = _A_list
@@ -364,9 +368,13 @@ class Time_Var_Conv_Comb(dynamic_base):
 class conv_test(Time_Var_Conv_Comb):
     def __init__(self, init, sigma):
         self.T = 1
-        A_mats = [np.array([[0.5, 0],[0,1]]),np.array([[1,0],[0,0.5]])]
-        B_mats = [np.eye(2),np.eye(2)]
-        Q_mats = [np.zeros((2,1)), np.zeros((2,1))]
+        A_mats = [np.array([[1, 0],[0, 1]]), np.array([[1, 0.5],[0.5, 1]])]
+        B_mats = [np.array([[1,0],[0,1]]), np.array([[1,0],[0, 1]])]
+        Q_mats = [np.array([[0,0]]).T for i in range(2)]
+        
+        #A_mats = [np.array([[0.5, 0],[0,1]]),np.array([[1,0],[0,0.5]])]
+        #B_mats = [np.eye(2),np.eye(2)]
+        #Q_mats = [np.zeros((2,1)), np.zeros((2,1))]
         u_max = np.ones((2,1))*5
         u_min = np.ones((2,1))*-5
         super().__init__(init, A_mats, B_mats, Q_mats, u_max, u_min, sigma)
