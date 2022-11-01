@@ -65,11 +65,11 @@ class multi_room_heating(hybrid_dynamic_base):
             b_1 = 0.0167
             b_2 = 0.0167
             c_1=0.8
-            c_2=0.9333
+            c_2=0.8
             A = [np.array([[1-b_1-a_12, a_12],[a_12, 1-b_2-a_12]]) for i in range(nr_rooms)]
             B = [np.array([[c_1,0],[0,c_2/2]]).T, np.array([[c_1/2,0],[0, c_2]]).T]
             Q = [np.array([[b_1*ambient_temp, b_2*ambient_temp]]).T for i in range(nr_rooms)]
-            self.transition_matrix = np.array([[0.5, 0.5],[0.5,0.5]])
+            self.transition_matrix = np.array([[0.99, 0.01],[0.01,0.99]])
         elif nr_rooms == 3:
             a_12 = 0.022
             a_13 = 0.022
@@ -132,7 +132,7 @@ class unsteered_test(hybrid_dynamic_base):
         a = [np.array([[1, 0],[0, 1]]), np.array([[1, 0.5],[0.5, 1]])]
         b = [np.array([[1,0],[0,1]]), np.array([[1,0],[0, 1]])]
         q = [np.array([[0,0]]).T for i in range(2)]
-        self.transition_matrix = np.array([[0.9999, 0.0001],[0.0001,0.9999]])
+        self.transition_matrix = np.array([[0.5, 0.5],[0.5,0.5]])
         self.individual_systems = [LTI_gauss(init_state, a[i], b[i], q[i], u_max[i], u_min[i], sigma) for i in range(2)]
 
 class steered_test(steered_base):
@@ -219,7 +219,7 @@ class dynamic_base:
     """
     Base class defining dynamics
     """
-    Convex_comb = False
+    robust = False
     hybrid=False
     horizon = 64
     grouped_timesteps = 1
@@ -233,7 +233,7 @@ class dynamic_base:
         """
         pass
 
-    def noise(self):
+    def noise(self,state=None):
         """
         Add noise
         """
@@ -244,7 +244,7 @@ class Fixed_Unkown_Conv_Comb(dynamic_base):
     Dynamics are fixed but unkown, but are a convex combination of known matrices
     This can't be solved since we need to steer dynamics to fixed points
     """
-    convex_comb=True
+    robust = True
     def __init__(self, init, _A_list, _B_list, _Q_list, _u_max, _u_min, _sigma, weights=None):
         self.A_list = _A_list
         self.B_list = _B_list
@@ -291,7 +291,7 @@ class Time_Var_Conv_Comb(dynamic_base):
     """
     Time varying dynamics, but always a convex combination of other matrices
     """
-    Convex_comb = True
+    robust = True
     def __init__(self, init, _A_list, _B_list, _Q_list, _u_max, _u_min, _sigma):
         if type(_A_list) is not list:
             _A_list = [_A_list]
@@ -354,14 +354,33 @@ class conv_test(Time_Var_Conv_Comb):
     def __init__(self, init, sigma):
         self.T = 1
         A_mats = [np.array([[1, 0],[0, 1]]), np.array([[1, 0.5],[0.5, 1]])] 
-        B = [np.array([[1,0],[0,1]]), np.array([[1,0],[0, 1]])]
-        Q = [np.array([[0,0]]).T for i in range(2)]
+        B_mats = [np.array([[1,0],[0,1]]), np.array([[1,0],[0, 1]])]
+        Q_mats = [np.array([[0,0]]).T for i in range(2)]
         #A_mats = [np.array([[0.5, 0],[0,1]]),np.array([[1,0],[0,0.5]])]
         #B_mats = [np.eye(2),np.eye(2)]
         #Q_mats = [np.zeros((2,1)), np.zeros((2,1))]
         u_max = np.ones((2,1))*5
         u_min = np.ones((2,1))*-5
         super().__init__(init, A_mats, B_mats, Q_mats, u_max, u_min, sigma)
+
+class non_conv_test(hybrid_dynamic_base):
+    """
+    test with arbitrary dynamics
+    """
+    def __init__(self, init_state, sigma=0.1):
+        self.state=init_state
+        self.mode=0
+        self.T=0.1
+        self.N_modes = 2
+        u_min = [np.ones((2,1))*-2 for i in range(2)]
+        u_max = [np.ones((2,1))*2 for i in range(2)]
+        sigma = np.diag([sigma for i in range(2)]) # assume noise is equal in all modes
+        ambient_temp = 6
+        a = [np.array([[1, 0],[0, 1]]), np.array([[1, 0.5],[0.5, 1]])]
+        b = [np.array([[1,0],[0,1]]), np.array([[1,0],[0, 1]])]
+        q = [np.array([[0,0]]).T for i in range(2)]
+        self.transition_matrix = np.array([[0.9999, 0.0001],[0.0001,0.9999]])
+        self.individual_systems = [LTI_gauss(init_state, a[i], b[i], q[i], u_max[i], u_min[i], sigma) for i in range(2)]        
 
 class steered_conv_test(steered_base):
     """
@@ -422,15 +441,6 @@ class LTI_gauss(dynamic_base):
     def noise(self):
         return np.random.multivariate_normal(self.mu, self.sigma)
 
-class non_conv_test(LTI_gauss):
-    def __init__(self, init, sigma):
-        self.T = 1
-        A = np.array([[0.5, 0],[0,1]])
-        B = np.eye(2)
-        Q = np.zeros((2,1))
-        u_max = np.ones((2,1))*5
-        u_min = np.ones((2,1))*-5
-        super().__init__(init, A, B, Q, u_max, u_min, np.eye(2)*sigma)
 class heat_1_room(dynamic_base):
     """
     1 room BAS heating

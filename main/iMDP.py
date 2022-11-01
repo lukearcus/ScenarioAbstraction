@@ -47,7 +47,7 @@ class iMDP:
         self.Goals = self.find_goals()
         self.Unsafes = self.find_unsafes()
         act_start = time.perf_counter()
-        if self.dyn.Convex_comb:
+        if self.dyn.robust:
             self.enabled_actions = [[] for _ in self.dyn.A_list]
             enabled_actions_lower = set(range(len(self.States)+1))
             for i, A in enumerate(self.dyn.A_list):
@@ -161,33 +161,46 @@ class iMDP:
         probs = {act:[] for act in self.enabled_actions}
         ids = dict(probs)
         for action in tqdm(self.enabled_actions):
-            ids[action], probs[action] = self.comp_bounds(self.States[action], N)
+            if self.dyn.robust:
+                if hasattr(self.dyn, 'mu'):
+                    for i in range(len(self.dyn.mu)):
+                        noise_func = {'mu':self.dyn.mu[i],'sigma':self.dyn.sigma[i]}
+                        ind_ids[action], ind_probs[action] = self.comp_bounds(self.States[action], N, noise_func)
+                else:
+                    for noise_func in self.dyn.noises:
+                        ind_ids[action], ind_probs[action] = self.comp_bounds(self.States[action], N, noise_func)
+                # now combine
+            else:
+                if hasattr(self.dyn, 'mu'):
+                    noise_func = {'mu':self.dyn.mu,'sigma':self.dyn.sigma}
+                else:
+                    noise_func = self.dyn.noise
+                ids[action], probs[action] = self.comp_bounds(self.States[action], N, noise_func)
         return probs, ids
 
-    def comp_bounds(self, action, N):
+    def comp_bounds(self, action, N, noise_func):
         """
         compute probability bounds by adding noise to goal position and checking the resulting state
         """
-        resulting_states = self.add_noise(action, N)
+        resulting_states = self.add_noise(action, N, noise_func)
         inds = self.find_state_index_with_init(resulting_states, action)
         N_in = [inds.count(i) for i in range(len(self.States)+1)]
         probs = self.samples_to_prob(N, N_in)
         arr = np.array([[i,p] for i, p in enumerate(probs) if p != -1], dtype='object')
         return list(arr[:,0]), list(arr[:,1])
 
-    def add_noise(self, action, N):
+    def add_noise(self, action, N, noise_func):
         """
         Adds noise to a chosen target state
         either by generating samples from a normal distribution or using noise function from dynamics
         """
         p = len(action)
-        if hasattr(self.dyn, 'mu'):
-            resulting_states = np.random.multivariate_normal(action, self.dyn.sigma, (N))
+        if type(noise_func) is dict:
+            resulting_states = np.random.multivariate_normal(action+noise_func['mu'], noise_func['sigma'], (N))
         else:
             resulting_states = np.zeros((N,p))
-            self.dyn.state = np.expand_dims(pos,1)
             for i in range(N):
-                resulting_states[i,:] = (np.expand_dims(pos,1) + self.dyn.noise()).T
+                resulting_states[i,:] = (np.expand_dims(action,1) + noise_func(np.expand_dims(action,1))).T # noise_func can be a function of current state
         return resulting_states
 
     def samples_to_prob(self, N, N_in):
@@ -404,6 +417,24 @@ class hybrid_iMDP:
             imdp.update_probs(N) 
             # might be able to share probabilities if noises same, just need to think about checking actions enabled
 
+class robust_iMDP(hybrid_iMDP):
+    """
+    Class for hybrid formulation, contains a list of iMDPS, one for each mode
+    """
+    
+    def __init__(self, Cont_state_space, Dynamics, parts, _beta = 0.01):
+        self.iMDPs = [iMDP(Cont_state_space, dyn, parts, _beta) for dyn in Dynamics.individual_systems]
+        self.N_modes = Dynamics.N_modes
+        
+
+    def find_state_index(self, x):
+        return self.iMDPs[0].find_state_index(x) # assuming equal partitioning across modes
+
+    def update_probs(self, N):
+        for imdp in self.iMDPs:
+            imdp.update_probs(N) 
+            # might be able to share probabilities if noises same, just need to think about checking actions enabled
+
 class PRISM_writer:
     """
     Class for creating PRISM files
@@ -553,7 +584,7 @@ class hybrid_PRISM_writer(PRISM_writer):
                                 if self.mode == "interval":
                                     if trans_prob !=  0.0:
                                         interval_idxs = [j for j in m.trans_ids[a]]
-                                        interval_strings = ["[" + str(dec_round(prob[0]*trans_prob,6))
+                                        interval_strings = ["[" + str(dec_round(prob[0]*trans_prob,6)) # change this in the case of unkown mode!!!!!!!
                                                             +","+str(dec_round(prob[1]*trans_prob,6))+"]"\
                                                             for prob in m.trans_probs[a]]
                                         deadlock_string = interval_strings.pop(-1)

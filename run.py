@@ -17,8 +17,10 @@ def main():
     save_sel = opt.save_choice()
     if model != "1room heating":
         noise_lvl = opt.noise_choice()
+    else:
+        noise_lvl = None
     imdp_abstr, ss, dyn, init_state, grid, model_name = get_imdp(load_sel, model, noise_lvl, save_sel)
-    opt_pol, opt_rew = run(init_state, dyn, imdp_abstr, grid, lb_sat_prob, model_name, max_iters=1)
+    opt_pol, opt_rew = run(init_state, dyn, imdp_abstr, grid, lb_sat_prob, model_name, init_samples=25, max_samples=12801 , max_iters=32)
     if model.split("_")[0] == "UAV":
         ax = ss.draw_space([0,1,2])
     else:
