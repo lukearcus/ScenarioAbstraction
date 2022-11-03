@@ -12,8 +12,25 @@ def create_plots(model, opt_pol, opt_rew, imdp, init, ax=None):
         plt.xlabel("Zone Temp (" + '\u00b0' + "C)", fontsize=15)
         plt.ylabel("Radiator Temp (" + '\u00b0' + "C)", fontsize=15)
         plt.title("Our Result", fontsize=20)
-    if  model=="conv_test":
+    if  model=="robust_test":
         heatmap(opt_rew, (100,100), [-20,20], [20,-20], ax)
+    if  model=="room_heating_robust":
+        heatmap(opt_rew, (40,40), [20,25], [20,25], ax)
+    if model=="separate_robust_test":
+        nr_rooms = len(imdp.iMDPs)
+        nr_states = len(imdp.iMDPs[0].States)+1
+        fig, axs = plt.subplots(1, nr_rooms)
+        for i in range(nr_rooms):
+            axs[i], im = heatmap(opt_rew[nr_states*i:nr_states*(i+1)], (40,40), [20,25], [20,25], axs[i])
+            axs[i].set_xlabel("Room 1 Temp (" + '\u00b0' + "C)", fontsize=15)
+            axs[i].set_ylabel("Room 2 Temp (" + '\u00b0' + "C)", fontsize=15)
+        fig.subplots_adjust(right=0.8)
+        cbar_ax = fig.add_axes([0.85, 0.15, 0.05, 0.7])
+        fig.colorbar(im, cax=cbar_ax)
+        if model=="n_room_heating":
+            fig.suptitle("Unsteered Transitions (i.e. no discrete actions)", fontsize=25)
+        else:
+            fig.suptitle("Steered Transitions", fontsize=25)
     if model.split("_")[0]=="UAV":
         plot_policy(opt_pol, init, imdp, ax)
     if model=="n_room_heating" or model=="steered_n_room_heating":
@@ -28,7 +45,7 @@ def create_plots(model, opt_pol, opt_rew, imdp, init, ax=None):
         cbar_ax = fig.add_axes([0.85, 0.15, 0.05, 0.7])
         fig.colorbar(im, cax=cbar_ax)
         if model=="n_room_heating":
-            fig.suptitle("Separate Modes", fontsize=25)
+            fig.suptitle("Unsteered Transitions (i.e. no discrete actions)", fontsize=25)
         else:
             fig.suptitle("Steered Transitions", fontsize=25)
     if model=="steered_test" or model=="unsteered_test":

@@ -1,6 +1,30 @@
 import numpy as np
 import main.BAS_params as BAS_class
 
+class dynamic_base:
+    """
+    Base class defining dynamics
+    """
+    robust = False
+    hybrid=False
+    horizon = 64
+    grouped_timesteps = 1
+    Q = 0
+    def __init__(self, init_state):
+        self.state = init_state
+
+    def state_update(self):
+        """
+        update state
+        """
+        pass
+
+    def noise(self,state=None):
+        """
+        Add noise
+        """
+        pass
+
 
 class hybrid_dynamic_base:
     """
@@ -9,12 +33,19 @@ class hybrid_dynamic_base:
     horizon = 64
     grouped_timesteps = 1
     N_modes=-1
+    robust=False
     hybrid = True
     steered = False
     
-    def __init__(self, init_state, init_mode):
+    def __init__(self, init_state, init_mode, T, A, B, Q, u_max, u_min, sigma, transition_matrix, N_modes):
         self.state = init_state
         self.mode = init_mode
+        self.T=T
+        self.N_modes = N_modes
+        
+        self.transition_matrix = transition_matrix
+        self.individual_systems = [LTI_gauss(init_state, A[i], B[i], Q[i], u_max[i], u_min[i], sigma[i]) for i in range(2)]
+
 
     def state_update(self, control):
         
@@ -43,40 +74,27 @@ class single_hybrid(hybrid_dynamic_base):
         self.N_modes = 1
         self.T=system.T
         self.mode = 0
-        self.transition_matrix = np.array([[1]])    
+        self.transition_matrix = np.array([[1]])
+        if hasattr(system, 'mu'):
+            self.mu = [mu]
+            self.sigma = [sigma]
+        else:
+            self.noises = [self.noise]
 
-class multi_room_heating(hybrid_dynamic_base):
-    """
-    Multiple room heating, 1 heater shared between all rooms
-    same A matrix in all modes
-    """
-    horizon=32
-    def __init__(self, init_state, init_mode=0, T=15, min_u=0, max_u=1, nr_rooms = 2, sigma=0.25):
-        self.state=init_state
-        self.mode=init_mode
-        self.T=T
-        self.N_modes = nr_rooms
-        u_min = [np.ones((nr_rooms,1))*min_u for i in range(nr_rooms)]
-        u_max = [np.ones((nr_rooms,1))*max_u for i in range(nr_rooms)]
-        sigma = np.diag([sigma for i in range(nr_rooms)]) # assume noise is equal in all modes
-        ambient_temp = 6
-        if nr_rooms == 2:
-            a_12 = 0.022
-            b_1 = 0.0167
-            b_2 = 0.0167
-            c_1=0.8
-            c_2=0.8
-            A = [np.array([[1-b_1-a_12, a_12],[a_12, 1-b_2-a_12]]) for i in range(nr_rooms)]
-            B = [np.array([[c_1,0],[0,c_2/2]]).T, np.array([[c_1/2,0],[0, c_2]]).T]
-            Q = [np.array([[b_1*ambient_temp, b_2*ambient_temp]]).T for i in range(nr_rooms)]
-            self.transition_matrix = np.array([[0.99, 0.01],[0.01,0.99]])
-        elif nr_rooms == 3:
-            a_12 = 0.022
-            a_13 = 0.022
-            a_23 = 0.001
-            A = [np.array([[1, a_12, a_13],[a_12, 1, a_23],[a_13, a_23, 1]]) for i in range(nr_rooms)]
-        self.individual_systems = [LTI_gauss(init_state, A[i], B[i], Q[i], u_max[i], u_min[i], sigma) for i in range(nr_rooms)]
+class steered_base(hybrid_dynamic_base):
 
+    steered = True
+    def state_update(self, cont_control, disc_control):
+        # update continuous state
+        curr_dyn = self.individual_systems[self.mode]
+        curr_dyn.state_update(cont_control)
+        self.state = curr_dyn.state
+
+        # update discrete state
+        self.mode = np.random.choice(self.N_modes, p = self.transition_matrices[self.mode][disc_control])
+        
+        # store current state in individual system state
+        self.individual_systems[self.mode].state = self.state
 
 class steered_MC(hybrid_dynamic_base):
     """
@@ -104,36 +122,47 @@ class steered_MC(hybrid_dynamic_base):
         # store current state in individual system state
         self.individual_systems[self.mode].state = self.state
 
-class steered_base(hybrid_dynamic_base):
+class multi_room_heating(hybrid_dynamic_base):
+    """
+    Multiple room heating, 1 heater shared between all rooms
+    same A matrix in all modes
+    """
+    horizon=32
+    def __init__(self, init_state, init_mode=0, T=15, min_u=0, max_u=1, nr_rooms = 2, sigma=0.25):
+        u_min = [np.ones((nr_rooms,1))*min_u for i in range(nr_rooms)]
+        u_max = [np.ones((nr_rooms,1))*max_u for i in range(nr_rooms)]
+        ambient_temp = 6
+        sigma = [np.diag([sigma for i in range(nr_rooms)]) for i in range(nr_rooms)] # noise is equal in all modes
+        if nr_rooms == 2:
+            a_12 = 0.022
+            b_1 = 0.0167
+            b_2 = 0.0167
+            c_1=0.8
+            c_2=0.8
+            A = [np.array([[1-b_1-a_12, a_12],[a_12, 1-b_2-a_12]]) for i in range(nr_rooms)]
+            B = [np.array([[c_1,0],[0,c_2/2]]).T, np.array([[c_1/2,0],[0, c_2]]).T]
+            Q = [np.array([[b_1*ambient_temp, b_2*ambient_temp]]).T for i in range(nr_rooms)]
+            transition_matrix = np.array([[0.5, 0.5],[0.5,0.5]])
+        elif nr_rooms == 3:
+            a_12 = 0.022
+            a_13 = 0.022
+            a_23 = 0.001
+            A = [np.array([[1, a_12, a_13],[a_12, 1, a_23],[a_13, a_23, 1]]) for i in range(nr_rooms)]
+        super().__init__(init_state, init_mode, T, A, B, Q, u_max, u_min, sigma, transition_matrix, nr_rooms)
 
-    steered = True
-    def state_update(self, cont_control, disc_control):
-        # update continuous state
-        curr_dyn = self.individual_systems[self.mode]
-        curr_dyn.state_update(cont_control)
-        self.state = curr_dyn.state
-
-        # update discrete state
-        self.mode = np.random.choice(self.N_modes, p = self.transition_matrices[self.mode][disc_control])
-        
-        # store current state in individual system state
-        self.individual_systems[self.mode].state = self.state
 
 class unsteered_test(hybrid_dynamic_base):
     def __init__(self, init_state, init_mode, sigma=0.1):
-        self.state=init_state
-        self.mode=init_mode
-        self.T=0.1
-        self.N_modes = 2
         u_min = [np.ones((2,1))*-2 for i in range(2)]
         u_max = [np.ones((2,1))*2 for i in range(2)]
-        sigma = np.diag([sigma for i in range(2)]) # assume noise is equal in all modes
+        sigma = [np.diag([sigma for i in range(2)]) for i in range(2)] # assume noise is equal in all modes
         ambient_temp = 6
         a = [np.array([[1, 0],[0, 1]]), np.array([[1, 0.5],[0.5, 1]])]
         b = [np.array([[1,0],[0,1]]), np.array([[1,0],[0, 1]])]
         q = [np.array([[0,0]]).T for i in range(2)]
-        self.transition_matrix = np.array([[0.5, 0.5],[0.5,0.5]])
-        self.individual_systems = [LTI_gauss(init_state, a[i], b[i], q[i], u_max[i], u_min[i], sigma) for i in range(2)]
+        transition_matrix = np.array([[0.5, 0.5],[0.5,0.5]])
+        
+        super.__init__(init_state, init_mode, T, A, B, Q, u_max, u_min, sigma, transition_matrix, nr_rooms)
 
 class steered_test(steered_base):
     """
@@ -147,13 +176,13 @@ class steered_test(steered_base):
         self.N_modes = 2
         u_min = [np.ones((2,1))*-2 for i in range(2)]
         u_max = [np.ones((2,1))*2 for i in range(2)]
-        sigma = np.diag([sigma for i in range(2)]) # assume noise is equal in all modes
+        sigma = [np.diag([sigma for i in range(2)]) for i in range(2)] # assume noise is equal in all modes
         ambient_temp = 6
         a = [np.array([[1, 0],[0, 1]]), np.array([[1, 0.5],[0.5, 1]])]
         b = [np.array([[1,0],[0,1]]), np.array([[1,0],[0, 1]])]
         q = [np.array([[0,0]]).T for i in range(2)]
         #self.transition_matrix = np.array([[0.5, 0.5],[0.5,0.5]])
-        self.individual_systems = [LTI_gauss(init_state, a[i], b[i], q[i], u_max[i], u_min[i], sigma) for i in range(2)]        
+        self.individual_systems = [LTI_gauss(init_state, a[i], b[i], q[i], u_max[i], u_min[i], sigma[i]) for i in range(2)]        
 
 class steered_drone_speed(steered_base):
     """
@@ -215,155 +244,56 @@ class steered_multi_room(multi_room_heating):
         # store current state in individual system state
         self.individual_systems[self.mode].state = self.state
 
-class dynamic_base:
-    """
-    Base class defining dynamics
-    """
-    robust = False
-    hybrid=False
-    horizon = 64
-    grouped_timesteps = 1
-    Q = 0
-    def __init__(self, init_state):
-        self.state = init_state
-
-    def state_update(self):
-        """
-        update state
-        """
-        pass
-
-    def noise(self,state=None):
-        """
-        Add noise
-        """
-        pass
-
-class Fixed_Unkown_Conv_Comb(dynamic_base):
-    """
-    Dynamics are fixed but unkown, but are a convex combination of known matrices
-    This can't be solved since we need to steer dynamics to fixed points
-    """
+class robust_test(hybrid_dynamic_base):
     robust = True
-    def __init__(self, init, _A_list, _B_list, _Q_list, _u_max, _u_min, _sigma, weights=None):
-        self.A_list = _A_list
-        self.B_list = _B_list
-        self.Q_list = _Q_list
-    
-        if weights is None:
-            weights = [random.random for i in self.A_list]
-            weights_sum = sum(weights)
-            weights = [weights/weights_sum for weight in weights]
-            self.A = sum([weight * self.A_list[i] for i, weight in enumerate(weights)])
-            self.B = sum([weight * self.B_list[i] for i, weight in enumerate(weights)])
-            self.Q = sum([weight * self.Q_list[i] for i, weight in enumerate(weights)])
 
-        self.u_max = _u_max
-        self.u_min = _u_min
-        self.sigma = np.eye(2)*_sigma
-        self.state = init
-        self.mu = np.zeros(self.state.shape)
-        if _A.shape[1] <= _B.shape[1]:
-            self.A_full_rank = _A
-            self.B_full_rank = _B
-            self.grouped_timesteps=1
-        else:
-            self.grouped_timestpes = int(math.ceil(_A.shape[1]/_B.shape[1]))
-            As = []
-            Bs = []
-            for i in range(self.grouped_timesteps):
-                As += np.linalg.matrix_power(_A, i+1)
-                Bs += np.linalg.matrix_power(_A, i)*_B
-
-            As.reverse()
-            Bs.reverse()
-
-            self.A_full_rank = np.hstack(tuple(As))
-            self.B_full_rank = np.hstack(tuple(Bs))
-
-    def state_update(self, control):
-        self.state = self.A*self.state + self.B*control + self.Q + self.noise()
-
-    def noise(self):
-        return np.random.multivariate_normal(self.mu, self.sigma)
-
-class Time_Var_Conv_Comb(dynamic_base):
-    """
-    Time varying dynamics, but always a convex combination of other matrices
-    """
-    robust = True
-    def __init__(self, init, _A_list, _B_list, _Q_list, _u_max, _u_min, _sigma):
-        if type(_A_list) is not list:
-            _A_list = [_A_list]
-        if type(_B_list) is not list:
-            _B_list = [_B_list]
-        if type(_Q_list) is not list:
-            _Q_list = [_Q_list]
-        self.A_list = _A_list
-        self.B_list = _B_list
-        self.Q_list = _Q_list
-        while len(self.A_list) < len(self.B_list):
-            self.A_list.append(self.A_list[0])
-        while len(self.B_list) < len(self.A_list):
-            self.B_list.append(self.B_list[0])
-        while len(self.Q_list) < len(self.A_list):
-            self.Q_list.append(self.Q_list[0])
-        self.u_max = _u_max
-        self.u_min = _u_min
-        self.sigma = np.eye(2)*_sigma
-        self.state = init
-        self.mu = np.zeros(self.state.shape)
-        if _A_list[0].shape[1] <= _B_list[0].shape[1]:
-            self.A_full_rank = []
-            self.B_full_rank = []
-            for i, _A in enumerate(self.A_list):
-                self.A_full_rank.append(_A)
-                self.B_full_rank.append(self.B_list[i])
-            self.grouped_timesteps=1
-        else:
-            self.A_full_rank = []
-            self.B_full_rank = []
-            for i, _A in enumerate(self.A_list):
-                _B = self.B_list[i]
-                self.grouped_timestpes = int(math.ceil(_A.shape[1]/_B.shape[1]))
-                As = []
-                Bs = []
-                for i in range(self.grouped_timesteps):
-                    As += np.linalg.matrix_power(_A, i+1)
-                    Bs += np.linalg.matrix_power(_A, i)*_B
-
-                As.reverse()
-                Bs.reverse()
-
-                self.A_full_rank.append(np.hstack(tuple(As)))
-                self.B_full_rank.append(np.hstack(tuple(Bs)))
-
-    def state_update(self, control):
-        weights = [random.random for i in self.A_list]
-        weights_sum = sum(weights)
-        weights = [weights/weights_sum for weight in weights]
-        A = sum([weight * self.A_list[i] for i, weight in enumerate(weights)])
-        B = sum([weight * self.B_list[i] for i, weight in enumerate(weights)])
-        Q = sum([weight * self.Q_list[i] for i, weight in enumerate(weights)])
-        self.state = A*self.state + B*control + Q + self.noise()
-
-    def noise(self):
-        return np.random.multivariate_normal(self.mu, self.sigma)
-
-class conv_test(Time_Var_Conv_Comb):
-    def __init__(self, init, sigma):
+    def __init__(self, init_state, sigma):
         self.T = 1
-        A_mats = [np.array([[1, 0],[0, 1]]), np.array([[1, 0.5],[0.5, 1]])] 
-        B_mats = [np.array([[1,0],[0,1]]), np.array([[1,0],[0, 1]])]
-        Q_mats = [np.array([[0,0]]).T for i in range(2)]
+        self.state = init_state
+        self.mode = 0
+        self.A_mats = [np.array([[1, 0],[0, 1]]), np.array([[1, 0.5],[0.5, 1]])] 
+        self.B_mats = [np.array([[1,0],[0,1]]), np.array([[1,0],[0, 1]])]
+        self.Q_mats = [np.array([[0,0]]).T for i in range(2)]
         #A_mats = [np.array([[0.5, 0],[0,1]]),np.array([[1,0],[0,0.5]])]
         #B_mats = [np.eye(2),np.eye(2)]
         #Q_mats = [np.zeros((2,1)), np.zeros((2,1))]
-        u_max = np.ones((2,1))*5
-        u_min = np.ones((2,1))*-5
-        super().__init__(init, A_mats, B_mats, Q_mats, u_max, u_min, sigma)
+        self.u_max = [np.ones((2,1))*5 for i in range(2)]
+        self.u_min = [np.ones((2,1))*-5 for i in range(2)]
+        self.transition_matrix = [np.random.random((2,2)) for i in range(2)]
+        self.sigma = [np.diag([sigma for i in range(2)]) for i in range(2)]
+        self.mu = [np.zeros((2,1)) for i in range(2)]
+        self.individual_systems = [LTI_gauss(init_state, self.A_mats[i], self.B_mats[i], self.Q_mats[i], self.u_max[i], self.u_min[i], self.sigma[i]) for i in range(2)]        
 
-class non_conv_test(hybrid_dynamic_base):
+class multi_room_heating_robust(hybrid_dynamic_base):
+    """
+    Multiple room heating, 1 heater shared between all rooms
+    same A matrix in all modes
+    """
+    robust=True
+    horizon=32
+    def __init__(self, init_state, init_mode=0, T=15, min_u=0, max_u=1, nr_rooms = 2, sigma=0.25):
+        self.state = init_state
+        self.mode = init_mode
+        self.u_min = [np.ones((nr_rooms,1))*min_u for i in range(nr_rooms)]
+        self.u_max = [np.ones((nr_rooms,1))*max_u for i in range(nr_rooms)]
+        ambient_temp = 6
+        self.sigma = [np.diag([sigma for i in range(nr_rooms)]) for i in range(nr_rooms)] # noise is equal in all modes
+        self.mu = [np.zeros((nr_rooms,1)) for i in range(nr_rooms)]
+        if nr_rooms == 2:
+            a_12 = 0.022
+            b_1 = 0.0167
+            b_2 = 0.0167
+            c_1=0.8
+            c_2=0.8
+            self.A_mats = [np.array([[1-b_1-a_12, a_12],[a_12, 1-b_2-a_12]]) for i in range(nr_rooms)]
+            self.B_mats = [np.array([[c_1,0],[0,c_2/2]]).T, np.array([[c_1/2,0],[0, c_2]]).T]
+            self.Q_mats = [np.array([[b_1*ambient_temp, b_2*ambient_temp]]).T for i in range(nr_rooms)]
+            self.transition_matrix = np.array([[0.5, 0.5],[0.5,0.5]])
+        else:
+            raise NotImplementedError
+        super().__init__(init_state, init_mode, T, self.A_mats, self.B_mats, self.Q_mats, self.u_max, self.u_min, self.sigma, self.transition_matrix, nr_rooms)
+
+class separate_robust_test(hybrid_dynamic_base):
     """
     test with arbitrary dynamics
     """
@@ -381,28 +311,6 @@ class non_conv_test(hybrid_dynamic_base):
         q = [np.array([[0,0]]).T for i in range(2)]
         self.transition_matrix = np.array([[0.9999, 0.0001],[0.0001,0.9999]])
         self.individual_systems = [LTI_gauss(init_state, a[i], b[i], q[i], u_max[i], u_min[i], sigma) for i in range(2)]        
-
-class steered_conv_test(steered_base):
-    """
-    test with arbitrary dynamics
-    """
-    def __init__(self, init_state, init_mode, sigma=0.1):
-        self.transition_matrices = [np.array([[0.9,0.1],[0.1,0.9]]) for i in range(2)]
-        self.state=init_state
-        self.mode=init_mode
-        self.T=0.1
-        self.N_modes = 2
-        u_min = [np.ones((2,1))*-3 for i in range(2)]
-        u_max = [np.ones((2,1))*3 for i in range(2)]
-        sigma = np.diag([sigma for i in range(2)]) # assume noise is equal in all modes
-        ambient_temp = 6
-        A = [[np.array([[0.8, 0],[0, 1.2]]), np.array([[1.2, 0],[0,0.8]])],\
-                [ np.array([[1, 0.25],[0.25, 0.7]]), np.array([[1,0.5],[0.5,1]]),np.array([[0.7,0.5],[0.5,1]])]]
-        B = [[np.eye(2),np.array([[0.9, 0.1],[0.1,0.9]])], [np.eye(2),np.array([[0.9,0],[0.2, 0.8]])]]
-        Q = [[np.array([[0,0]]).T for i in range(2)] for i in range(2)]
-        #self.transition_matrix = np.array([[0.5, 0.5],[0.5,0.5]])
-        self.individual_systems = [Time_Var_Conv_Comb(init_state, A[i], B[i], Q[i], u_max[i], u_min[i], sigma) for i in range(2)]        
-
 
 class LTI_gauss(dynamic_base):
     """
@@ -671,11 +579,11 @@ class Full_Drone_dryden(Full_Drone_Base):
         super().__init__(init_state, T, max_acc, min_acc)
 
     def noise(self):
-        return self.A_1_step @ self.single_noise() + self.single_noise()
+        return self.A_1_step @ self.single_noise(self.state) + self.single_noise(self.state)
 
-    def single_noise(self):
+    def single_noise(self, state):
         sigma_w = self.sigma_w
-        h = float(self.state[2])/0.3048
+        h = float(state[2])/0.3048
         if h < 0:
             self.crashed = True
             return np.zeros((6,1))
@@ -688,7 +596,7 @@ class Full_Drone_dryden(Full_Drone_Base):
         L_u = h/(0.177+0.000823*h)**1.2
         L_v = L_u
 
-        V = np.linalg.norm(self.state[3:])
+        V = np.linalg.norm(state[3:])
         T = self.T
 
         pos_noise = np.zeros((3,1))

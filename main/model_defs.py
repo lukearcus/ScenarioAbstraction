@@ -10,7 +10,7 @@ def get_imdp(load_sel, model, noise_lvl, save_sel):
     Either loads or creates a fresh iMDP abstraction based on chosen model
     Then saves based on users preference (if generating a fresh abstraction)
     """
-    if model == "n_room_heating" or model == "steered_n_room_heating":
+    if model == "n_room_heating" or model == "steered_n_room_heating" or model=="room_heating_robust":
         nr_rooms = opt.rooms_choice()
         model_name = model+"_"+str(nr_rooms)
     else:
@@ -102,6 +102,17 @@ def get_imdp(load_sel, model, noise_lvl, save_sel):
             grid=(40,40)
         else:
             raise NotImplementedError
+    if model=="room_heating_robust":
+        if nr_rooms == 2:
+            sigma = noise_lvl*0.01
+            init_state = np.array([[21,21]]).T
+            init_mode=0
+            dyn = Dynamics.multi_room_heating_robust(init_state, init_mode, sigma=sigma)
+            init = [init_state, init_mode]
+            ss = StateSpace.ContStateSpace(nr_rooms, ((20, 20), (25, 25)), [], [((23, 23), (24, 24)) ])
+            grid=(40,40)
+        else:
+            raise NotImplementedError
     if model=="steered_n_room_heating":
         if nr_rooms == 2:
             sigma = noise_lvl*0.01
@@ -129,36 +140,30 @@ def get_imdp(load_sel, model, noise_lvl, save_sel):
         init = [init_state, init_mode]
         ss = StateSpace.ContStateSpace(2, ((-20, -20), (20, 20)), [((0,0),(1,1))], [((9, 9), (11, 11)) ])
         grid=(100,100)
-    if model == "conv_test":
+    if model == "robust_test":
         sigma = noise_lvl*0.01
         init = np.array([[-10,10]]).T
-        dyn = Dynamics.conv_test(init, sigma=sigma)
+        dyn = Dynamics.robust_test(init, sigma=sigma)
         ss = StateSpace.ContStateSpace(2, ((-20, -20), (20, 20)), [((-5,-5),(1,1))], [((9, 9), (11, 11)) ])
         grid=(100,100)
-    if model == "non_conv_test":
+        init = [init,0]
+    if model == "separate_robust_test":
         sigma = noise_lvl*0.01
         init = np.array([[-10,10]]).T
-        dyn = Dynamics.non_conv_test(init, sigma=sigma)
+        dyn = Dynamics.separate_robust_test(init, sigma=sigma)
         ss = StateSpace.ContStateSpace(2, ((-20, -20), (20, 20)), [((-1,-1),(1,1))], [((9, 9), (11, 11)) ])
         grid=(100,100)
         init = [init, 0]
-    if model == "steered_conv_test":
-        sigma = noise_lvl*0.01
-        init_state = np.array([[-10,10]]).T
-        init_mode = 0
-        init = [init_state, init_mode]
-        dyn = Dynamics.steered_conv_test(init_state, init_mode, sigma=sigma)
-        ss = StateSpace.ContStateSpace(2, ((-20, -20), (20, 20)), [((-5,-5),(1,1))], [((9, 9), (11, 11)) ])
-        grid=(100,100)
-        
+    
     if load_sel == "N":
         if dyn.hybrid == False:
             init = [init, 0]
             dyn = Dynamics.single_hybrid(dyn) # can make single system into a hybrid with 1 discrete mode
-        if dyn.steered == False:
+        if not dyn.steered and not dyn.robust:
             dyn = Dynamics.steered_MC(dyn)
         imdp_abstr = iMDP.hybrid_iMDP(ss,dyn,grid)
         if save_sel == 'Y':
             with open("stored_abstractions/"+model_name+'_imdp.pkl', 'wb') as outp:
                 pickle.dump(imdp_abstr, outp, pickle.HIGHEST_PROTOCOL)
+            print("Model saved!")
     return imdp_abstr, ss, dyn, init, grid, model_name

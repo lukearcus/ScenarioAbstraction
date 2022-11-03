@@ -48,13 +48,15 @@ class iMDP:
         self.Unsafes = self.find_unsafes()
         act_start = time.perf_counter()
         if self.dyn.robust:
-            self.enabled_actions = [[] for _ in self.dyn.A_list]
+            self.enabled_actions = [[] for _ in self.dyn.A_mats]
             enabled_actions_lower = set(range(len(self.States)+1))
-            for i, A in enumerate(self.dyn.A_list):
+            for i, A in enumerate(self.dyn.A_mats):
                 A_pinv = np.linalg.pinv(A)
-                B = self.dyn.B_list[i]
-                Q = self.dyn.Q_list[i]
-                Actions_inv, Actions_for, self.enabled_actions[i] = self.determine_actions(A_pinv, A, B, Q)
+                B = self.dyn.B_mats[i]
+                Q = self.dyn.Q_mats[i]
+                u_min = self.dyn.u_min[i]
+                u_max = self.dyn.u_max[i]
+                Actions_inv, Actions_for, self.enabled_actions[i] = self.determine_actions(A_pinv, A, B, Q, u_min, u_max)
                 if i == 0:
                     self.Actions = Actions_inv
                     self.Actions_forward = Actions_for
@@ -65,7 +67,7 @@ class iMDP:
             self.enabled_actions = enabled_actions_lower
         else:
             A_pinv = np.linalg.pinv(self.dyn.A)
-            self.Actions, self.Actions_forward, self.enabled_actions = self.determine_actions(A_pinv, self.dyn.A, self.dyn.B, self.dyn.Q)
+            self.Actions, self.Actions_forward, self.enabled_actions = self.determine_actions(A_pinv, self.dyn.A, self.dyn.B, self.dyn.Q, self.dyn.u_min, self.dyn.u_max)
         act_end = time.perf_counter()
         print("Actions set up in "+str(act_end-act_start))
     
@@ -165,11 +167,40 @@ class iMDP:
                 if hasattr(self.dyn, 'mu'):
                     for i in range(len(self.dyn.mu)):
                         noise_func = {'mu':self.dyn.mu[i],'sigma':self.dyn.sigma[i]}
-                        ind_ids[action], ind_probs[action] = self.comp_bounds(self.States[action], N, noise_func)
+                        ind_ids, ind_probs = self.comp_bounds(self.States[action], N, noise_func)
+                        if i == 0:
+                            ids[action] = ind_ids
+                            probs[action] = ind_probs
+                        else:
+                            for j, elem in enumerate(ids[action]):
+                                if elem in ind_ids:
+                                    probs[action][j][0] = min(probs[action][j][0], ind_probs[ind_ids.index(elem)][0])
+                                    probs[action][j][1] = max(probs[action][j][1], ind_probs[ind_ids.index(elem)][1])
+                                else:
+                                    probs[action][j][0] = 1e-4
+                            for j, elem in enumerate(ind_ids):
+                                if elem not in ids[action]:
+                                    ids[action].append(elem)
+                                    probs[action].append([1e-4, ind_probs[j][1]])
                 else:
-                    for noise_func in self.dyn.noises:
+                    for i, noise_func in enumerate(self.dyn.noises):
+                        ind_probs = {act:[] for act in self.enabled_actions}
+                        ind_ids = dict(probs)
                         ind_ids[action], ind_probs[action] = self.comp_bounds(self.States[action], N, noise_func)
-                # now combine
+                        if i == 0:
+                            ids[action] = ind_ids
+                            probs[action] = ind_probs
+                        else:
+                            for j, elem in enumerate(ids[action]):
+                                if elem in ind_ids:
+                                    probs[action][j][0] = min(probs[action][j][0], ind_probs[ind_ids.index(elem)][0])
+                                    probs[action][j][1] = max(probs[action][j][1], ind_probs[ind_ids.index(elem)][1])
+                                else:
+                                    probs[action][j][0] = 1e-4
+                            for j, elem in enumerate(ind_ids):
+                                if elem not in ids[action]:
+                                    ids[action].append(elem)
+                                    probs[action].append([1e-4, ind_probs[j][1]])
             else:
                 if hasattr(self.dyn, 'mu'):
                     noise_func = {'mu':self.dyn.mu,'sigma':self.dyn.sigma}
@@ -196,7 +227,7 @@ class iMDP:
         """
         p = len(action)
         if type(noise_func) is dict:
-            resulting_states = np.random.multivariate_normal(action+noise_func['mu'], noise_func['sigma'], (N))
+            resulting_states = np.random.multivariate_normal((action+noise_func['mu'].T).flatten(), noise_func['sigma'], (N))
         else:
             resulting_states = np.zeros((N,p))
             for i in range(N):
@@ -298,12 +329,12 @@ class iMDP:
             list_out =  [state_inds_to_check[np.where(abs_sum[i,:])[0][0]] if np.any(abs_sum[i,:]) else -1 for i in range(num_ins) ]
         return  list_out
 
-    def determine_actions(self, A_pinv, A, B, Q):
+    def determine_actions(self, A_pinv, A, B, Q, u_min, u_max):
         """
         Determines iMDP actions, if dimensions are unequal might have some issues
         """
         print("Determining actions")
-        u = [[self.dyn.u_min[i], self.dyn.u_max[i]] for i in range(len(self.dyn.u_max))]
+        u = [[u_min[i], u_max[i]] for i in range(len(u_max))]
         x_inv_area = np.zeros((2**len(self.dyn.u_max), A.shape[0]))
         for i, u_elem in enumerate(itertools.product(*u)):
             list_elem = list(u_elem)
@@ -313,9 +344,9 @@ class iMDP:
         dim_equal = A.shape[0] == B.shape[1]
         if dim_equal:
             n = A.shape[0]
-            u_avg = np.array(self.dyn.u_max + self.dyn.u_min)/2
+            u_avg = np.array(u_max + u_min)/2
             u_avg = u_avg.T
-            u = np.tile(u_avg, (n, 1)) + np.diag((self.dyn.u_max.T - u_avg)[0])
+            u = np.tile(u_avg, (n, 1)) + np.diag((u_max.T - u_avg)[0])
 
             origin = A_pinv @ (B @ np.array(u_avg).T)
 
@@ -405,27 +436,13 @@ class hybrid_iMDP:
     """
     
     def __init__(self, Cont_state_space, Dynamics, parts, _beta = 0.01):
-        self.iMDPs = [iMDP(Cont_state_space, dyn, parts, _beta) for dyn in Dynamics.individual_systems]
-        self.discrete_trans = Dynamics.transition_matrices
+        if not Dynamics.robust:
+            self.iMDPs = [iMDP(Cont_state_space, dyn, parts, _beta) for dyn in Dynamics.individual_systems]
+            self.discrete_trans = Dynamics.transition_matrices
+        else:
+            self.iMDPs = [iMDP(Cont_state_space, Dynamics, parts, _beta)]
+            self.discrete_trans = [[[[1,1]]]]
         self.N_modes = Dynamics.N_modes
-
-    def find_state_index(self, x):
-        return self.iMDPs[0].find_state_index(x) # assuming equal partitioning across modes
-
-    def update_probs(self, N):
-        for imdp in self.iMDPs:
-            imdp.update_probs(N) 
-            # might be able to share probabilities if noises same, just need to think about checking actions enabled
-
-class robust_iMDP(hybrid_iMDP):
-    """
-    Class for hybrid formulation, contains a list of iMDPS, one for each mode
-    """
-    
-    def __init__(self, Cont_state_space, Dynamics, parts, _beta = 0.01):
-        self.iMDPs = [iMDP(Cont_state_space, dyn, parts, _beta) for dyn in Dynamics.individual_systems]
-        self.N_modes = Dynamics.N_modes
-        
 
     def find_state_index(self, x):
         return self.iMDPs[0].find_state_index(x) # assuming equal partitioning across modes
@@ -582,12 +599,16 @@ class hybrid_PRISM_writer(PRISM_writer):
                             for m_next_id, trans_prob in enumerate(trans_probs):
                                 substring_start = str(counter+i+1) + ' '+str(choice)
                                 if self.mode == "interval":
-                                    if trans_prob !=  0.0:
+                                    if type(trans_prob) is not list:
+                                        trans_prob = [trans_prob, trans_prob]
+                                    if trans_prob[1] !=  0.0:
                                         interval_idxs = [j for j in m.trans_ids[a]]
-                                        interval_strings = ["[" + str(dec_round(prob[0]*trans_prob,6)) # change this in the case of unkown mode!!!!!!!
-                                                            +","+str(dec_round(prob[1]*trans_prob,6))+"]"\
+                                        interval_strings = ["[" + str(dec_round(prob[0]*trans_prob[0],6))
+                                                            +","+str(dec_round(prob[1]*trans_prob[1],6))+"]"\
                                                             for prob in m.trans_probs[a]]
-                                        deadlock_string = interval_strings.pop(-1)
+                                        deadlock_pos = interval_idxs.index(len(m.States))
+                                        deadlock_string = interval_strings.pop(deadlock_pos)
+                                        interval_idxs.pop(deadlock_pos)
                                         subsubstring_a = [substring_start+' ' + str(count_inn) + ' ' \
                                                           +deadlock_string+' '+action_label]
                                         subsubstring_b = [substring_start+" "+str(count_inn+j+1)+" "+intv+" "+action_label
@@ -609,8 +630,10 @@ class hybrid_PRISM_writer(PRISM_writer):
                                 action_label = "a_" + str(i)+ "_m_"+str(m_num)+"_p_"+str(disc_act_id)
                                 count_inn = 0
                                 for m_next_id, trans_prob in enumerate(trans_probs):
+                                    if type(trans_prob) is not list:
+                                        trans_prob = [trans_prob, trans_prob]
                                     subsubstring += [str(counter+i+1) + ' ' + str(choice)+ ' '+str(count_inn+i+1)+\
-                                                     ' ['+ str(max(1e-6,trans_prob)) + ','+str(trans_prob)+'] '+action_label]
+                                                     ' ['+ str(max(1e-6,trans_prob[0])) + ','+str(trans_prob[1])+'] '+action_label]
                                     count_inn += len(m.States)+1
                                 nr_choices_absolute += 1
                                 choice += 1

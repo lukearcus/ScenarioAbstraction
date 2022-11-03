@@ -55,9 +55,9 @@ def model_choice():
                   "steered_n_room_heating",
                   "steered_test",
                   "unsteered_test",
-                  "conv_test",
-                  "non_conv_test",
-                  "steered_conv_test"
+                  "robust_test",
+                  "separate_robust_test",
+                  "room_heating_robust",
                   ]
         for i, model in enumerate(models):
             print(str(i) + "- "+model)
