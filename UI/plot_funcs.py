@@ -75,20 +75,25 @@ def plot_policy(policy, init, imdp_abstr, ax=None):
         fig=plt.figure()
         ax = plt.axes(projection='3d')
     counter = 0
+    trajectories = []
     for imdp in imdp_abstr.iMDPs:
         ind = int(imdp.find_state_index(init[0].T)[0][0][0])
         x = [imdp.States[ind][0]]
         y = [imdp.States[ind][1]]
-        z = [imdp.States[ind][2]]
+        z = [imdp.States[ind][2]-100]
+        
         for timestep in policy:
-            ind = int(timestep[ind+counter][0])
+            ind = int(timestep[ind+counter+1][0])
             if ind == -1:
                 break
             x += [imdp.States[ind][0]]
             y += [imdp.States[ind][1]]
-            z += [imdp.States[ind][2]]
+            z += [imdp.States[ind][2]-100]
         counter += len(imdp.States)+1
-        ax.plot3D(x,y,z)
+        trajectories.append(np.array([x,y,z]))
+        #ax.plot3D(x,y,z)
+    import pdb; pdb.set_trace()
+    np.savetxt('traj.csv', np.array(trajectories), delimiter=',')
 
 def drone_plot(data, T, ax=None):
     """

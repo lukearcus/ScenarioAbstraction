@@ -45,7 +45,7 @@ class iMDP:
         adj_end  = time.perf_counter()
         print("Adjacency set up in "+str(adj_end-state_end))
         self.Goals = self.find_goals()
-        self.Unsafes = self.find_unsafes()
+        self.Crits = self.find_unsafes()
         act_start = time.perf_counter()
         if self.dyn.robust:
             self.enabled_actions = [[] for _ in self.dyn.A_mats]
@@ -363,7 +363,7 @@ class iMDP:
             x_inv_hull = Delaunay(x_inv_area, qhull_options='QJ')
             allRegionVertices = corners_array
         actions_forward = {i : [] for i, s in enumerate(self.States)}
-        actions_inv = {i : [] for i,s in enumerate(self.States) if i not in self.Unsafes}
+        actions_inv = {i : [] for i,s in enumerate(self.States)}
         if dim_equal:
             nr_acts = len(actions_inv)
             for act in tqdm(actions_inv):
@@ -372,26 +372,26 @@ class iMDP:
                 poly_reshape = np.reshape(all_vert_normed, (len(self.States),n*(2**n)))
                 enabled_in = np.maximum(np.max(poly_reshape, axis=1), -np.min(poly_reshape, axis=1)) <= 1.0
                 state_ids = np.where(enabled_in)[0]
-                actions_inv[act] = list(set(state_ids)-set(self.Unsafes))
+                actions_inv[act] = list(set(state_ids))
                 #actions_inv[act] = [state_id for state_id in state_ids\
-                #                if state_id not in self.Unsafes]
+                #                if state_id not in self.Crits]
                 for state_id in actions_inv[act]:
                     actions_forward[state_id].append(act)
         else:
             for act in tqdm(actions_inv):
-                state_counter = {i: 0 for s_num, i in enumerate(self.States) if s_num not in self.Unsafes}
+                state_counter = {i: 0 for s_num, i in enumerate(self.States)}
                 A_inv_d = A_pinv @ np.array(act)
                 all_vertices = A_inv_d - corners_array
                 in_hull = x_inv_hull.find_simplex(all_vertices) >= 0
                 if np.any(in_hull):
                     for val in corners_array[in_hull]:
                         for state in self.Corners_to_states[tuple(val)]:
-                            if self.States.index(state) not in self.Unsafes:
+                            if self.States.index(state):
                                 state_counter[state]+=1
                                 if state_counter[state] == 2**self.N_d:
                                     actions[act].append(state)
                 state_ids = np.where(enabled_in)[0]
-                actions_inv[act] = [state_id for state_id in state_ids if state_id not in self.Unsafes]
+                actions_inv[act] = [state_id for state_id in state_ids if state_id]
          
         enabled = [act for act in actions_inv if len(actions_inv[act]) > 0]
         return actions_inv, actions_forward, enabled
@@ -441,7 +441,7 @@ class hybrid_iMDP:
             self.discrete_trans = Dynamics.transition_matrices
         else:
             self.iMDPs = [iMDP(Cont_state_space, Dynamics, parts, _beta)]
-            self.discrete_trans = [[[[1,1]]]]
+            self.discrete_trans = np.array([[[[1,1]]]])
         self.N_modes = Dynamics.N_modes
 
     def find_state_index(self, x):
@@ -477,6 +477,10 @@ class PRISM_writer:
         file_prefix = output_folder + "/PRISM_out"
         self.vector_filename = file_prefix + "_vector.csv"
         self.policy_filename = file_prefix + "_policy.csv"
+        self.opt_thresh = False
+        self.thresh = 0.5
+        self.max = True
+        self.spec = "until"
 
     def write(self):
         if self.explicit:
@@ -505,6 +509,13 @@ class PRISM_writer:
         optimal_reward = np.zeros(np.shape(policy)[1])
 
         optimal_reward = np.genfromtxt(vector_file).flatten()
+        if not self.opt_thresh:
+            if self.max:
+                optimal_reward = optimal_reward >= self.thresh
+            else:
+                optimal_reward = optimal_reward <= self.thresh
+
+
         for i, row in enumerate(policy):
             for j, value in enumerate(row):
                 if value != '':
@@ -544,20 +555,8 @@ class hybrid_PRISM_writer(PRISM_writer):
     Class for dealing with hybrid formulations in PRISM
     """
     
-    def _write_explicit(self):
-        state_list = ['(x,m)']
-        counter=0
-        for m_num, m in enumerate(self.model.iMDPs):
-            state_list += [str(counter)+':(-1,'+str(m_num)+')']
-            state_list += [str(counter+i+1)+':('+str(i)+','+str(m_num)+')'\
-                             for i in range(len(m.States))]
-            counter += len(m.States)+1
-        
-        state_string = '\n'.join(state_list)
-        
-        self.write_file(state_string, self.state_filename)
-        
-        label_file_list = ['0="init" 1="deadlock" 2="reached"']
+    def _write_labels(self):
+        label_file_list = ['0="init" 1="deadlock" 2="reached" 3="critical"']
 
         counter = 0
         for m_num, m in enumerate(self.model.iMDPs):
@@ -571,6 +570,9 @@ class hybrid_PRISM_writer(PRISM_writer):
             
             for i in m.Goals:
                 substring[i+1] += ' 2'
+            
+            for i in m.Crits:
+                substring[i+1] ++ ' 3'
 
             label_file_list += substring
             counter += len(m.States)+1
@@ -578,7 +580,23 @@ class hybrid_PRISM_writer(PRISM_writer):
         label_file_string = '\n'.join(label_file_list)
 
         self.write_file(label_file_string, self.label_filename)
+
+
+    def _write_explicit(self):
+        state_list = ['(x,m)']
+        counter=0
+        for m_num, m in enumerate(self.model.iMDPs):
+            state_list += [str(counter)+':(-1,'+str(m_num)+')']
+            state_list += [str(counter+i+1)+':('+str(i)+','+str(m_num)+')'\
+                             for i in range(len(m.States))]
+            counter += len(m.States)+1
         
+        state_string = '\n'.join(state_list)
+        
+        self.write_file(state_string, self.state_filename)
+        
+        self._write_labels()
+
         nr_choices_absolute = 0
         nr_transitions_absolute = 0
         transition_file_list = []
@@ -599,8 +617,8 @@ class hybrid_PRISM_writer(PRISM_writer):
                             for m_next_id, trans_prob in enumerate(trans_probs):
                                 substring_start = str(counter+i+1) + ' '+str(choice)
                                 if self.mode == "interval":
-                                    if type(trans_prob) is not list:
-                                        trans_prob = [trans_prob, trans_prob]
+                                    if trans_prob.size == 1:
+                                        trans_prob = (trans_prob, trans_prob)
                                     if trans_prob[1] !=  0.0:
                                         interval_idxs = [j for j in m.trans_ids[a]]
                                         interval_strings = ["[" + str(dec_round(prob[0]*trans_prob[0],6))
@@ -630,8 +648,8 @@ class hybrid_PRISM_writer(PRISM_writer):
                                 action_label = "a_" + str(i)+ "_m_"+str(m_num)+"_p_"+str(disc_act_id)
                                 count_inn = 0
                                 for m_next_id, trans_prob in enumerate(trans_probs):
-                                    if type(trans_prob) is not list:
-                                        trans_prob = [trans_prob, trans_prob]
+                                    if trans_prob.size == 1:
+                                        trans_prob = (trans_prob, trans_prob)
                                     subsubstring += [str(counter+i+1) + ' ' + str(choice)+ ' '+str(count_inn+i+1)+\
                                                      ' ['+ str(max(1e-6,trans_prob[0])) + ','+str(trans_prob[1])+'] '+action_label]
                                     count_inn += len(m.States)+1
@@ -706,11 +724,28 @@ class hybrid_PRISM_writer(PRISM_writer):
             if mode == "estimate":
                 specification = "Pmax=? [ F<="+str(horizonLen)+' "reached" ]'
             else:
-                specification = "Pmaxmin=? [ F<="+str(horizonLen)+' "reached" ]'
+                if self.max:
+                    if self.spec == "until":
+                        specification = 'Pmaxmin=? [ !"critical" U<='+str(horizonLen)+' "reached" ]'
+                    else:
+                        specification = 'Pmaxmin=? [ X"reached" ]'
+                else:
+                    if self.spec == "until":
+                        specification = 'Pminmax=? [ !"critical" U<='+str(horizonLen)+' "reached" ]'
+                    else:
+                        specification = 'pminmax=? [ X"reached"]'
+                #specification = "Pmaxmin=? [ F<="+str(horizonLen)+' "reached" ]'
         else:
             if mode == "estimate":
-                specification = 'Pmax=? [ F "reached" ]'
+                if self.max:
+                    specification = 'Pmax=? [ F "reached" ]'
+                else:
+                    specification = 'Pmin=? [ F "reached" ]'
+
             else:
-                specification = 'Pmaxmin=? [ F "reached" ]'
+                if self.max:
+                    specification = 'Pmaxmin=? [ !"critical" U "reached" ]'
+                else:
+                    specification = 'Pminmax=? [ F "reached" ]'
         self.write_file(specification, self.spec_filename)
         return specification

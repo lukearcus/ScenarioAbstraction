@@ -1,7 +1,7 @@
 import main.iMDP as iMDP
 import os
 
-PRISM_MEM=12
+PRISM_MEM=30
 def run(init_state, dyn, test_imdp,  grid, min_lb, model, init_samples=25, max_iters=20, max_samples=6401):
     lb_sat_prob = 0
     max_samples=max(init_samples+1,max_samples)
@@ -29,6 +29,10 @@ def run(init_state, dyn, test_imdp,  grid, min_lb, model, init_samples=25, max_i
         writer = iMDP.hybrid_PRISM_writer(
                                 test_imdp, dyn.horizon, input_folder, output_folder, _explicit=True
                                 )
+        # for complex formula, first we do P>=0.7(safe until warm)
+        writer.max = True
+        writer.thresh = 0.7
+
         writer.write()
         print("Solving iMDP")
         writer.solve_PRISM(PRISM_MEM)
@@ -36,7 +40,26 @@ def run(init_state, dyn, test_imdp,  grid, min_lb, model, init_samples=25, max_i
         lb_sat_prob = rew[tuple(init_id)]
         print("lower bound on initial state: "+str(lb_sat_prob))
         i+=1
-        #i=200 # so we only run 1 loop
         samples *= 2
+
+        #Below is to do more complex formulae
+
+        second_sats = rew
+
+        writer.max = False
+        writer.thresh = 0.4
+
+        writer._write_labels()
+        writer.spec = "until"
+        writer.writePRISM_specification()
+
+        writer.max = True
+        writer.thresh = 0.5
+
+        writer._write_labels()
+        writer.spec = "next"
+        writer.writePRISM_specification()
+
+
     return opt_pol, rew
 

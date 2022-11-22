@@ -142,7 +142,7 @@ class multi_room_heating(hybrid_dynamic_base):
             A = [np.array([[1-b_1-a_12, a_12],[a_12, 1-b_2-a_12]]) for i in range(nr_rooms)]
             B = [np.array([[c_1,0],[0,c_2/2]]).T, np.array([[c_1/2,0],[0, c_2]]).T]
             Q = [np.array([[b_1*ambient_temp, b_2*ambient_temp]]).T for i in range(nr_rooms)]
-            transition_matrix = np.array([[0.5, 0.5],[0.5,0.5]])
+            transition_matrix = np.array([[(0.4,0.6), (0.4,0.6)],[(0.4,0.6), (0.4,0.6)]])
         elif nr_rooms == 3:
             a_12 = 0.022
             a_13 = 0.022
@@ -217,8 +217,8 @@ class drone_var_noise(hybrid_dynamic_base):
         self.individual_systems = [Full_Drone_gauss(init_state, T, 4,\
                                     -4, _sigma=0.15),\
                                    Full_Drone_gauss(init_state, T, 4,\
-                                    -4, _sigma=0.75)]
-        self.transition_matrix = np.array([[0.99,0.01],[0.5,0.5]])
+                                    -4, _sigma=1.5)]
+        self.transition_matrix = np.array([[0.9,0.1],[0.3,0.7]])
 
 
 class steered_multi_room(multi_room_heating):
@@ -231,7 +231,7 @@ class steered_multi_room(multi_room_heating):
         if nr_rooms == 2:
             # now one transition matrix for each mode, each row is an action and contains transition probabilities
             # to next mode
-            self.transition_matrices = [np.array([[0.9,0.1],[0.1,0.9]]) for i in range(2)]
+            self.transition_matrices = [np.array([[(0.8,0.99),(0.01,0.2)],[(0.01,0.2),(0.8,0.99)]]) for i in range(2)]
     def state_update(self, cont_control, disc_control):
         # update continuous state
         curr_dyn = self.individual_systems[self.mode]

@@ -1,35 +1,36 @@
-import matplotlib.pyplot as plt
-from mpl_toolkits import mplot3d
+import sys
 import numpy as np
-import pickle
-import os
+import UI.plot_funcs as plot_funcs
+from main.model_defs import get_imdp
+from main.run_loop import run
 
-import main.Dynamics
-import UI.plot_funcs
-import main.StateSpace
-import main.iMDP
+start_samples = 100
+num_samples=12801
+iters=1
 
-init_state = np.array([[10,10]]).T
-hybrid_dyn = main.Dynamics.multi_room_heating(init_state)
-hybrid_ss = main.StateSpace.ContStateSpace(2, ((15, 15), (25, 25)), [], [((20, 20), (22, 22)) ])
-hybrid_imdp = main.iMDP.hybrid_iMDP(hybrid_ss,hybrid_dyn,(40,40))
+def main():
+    """
+    Main function for running Code
+    """
+    lb_sat_prob=0.5
+    model = "steered_n_room_heating"
+    load_sel = "N"
+    save_sel = "N"
+ 
+    if model != "1room heating":
+        noise_lvl = 2
+    else:
+        noise_lvl = None
+    imdp_abstr, ss, dyn, init_state, grid, model_name = get_imdp(load_sel, model, noise_lvl, save_sel,2)
+    opt_pol, opt_rew = run(init_state, dyn, imdp_abstr, grid, lb_sat_prob, model_name, init_samples=start_samples, max_samples=num_samples, max_iters=iters)
+    if model.split("_")[0] == "UAV":
+        ax = ss.draw_space([0,1,2])
+    else:
+        ax=None
+    plot_funcs.create_plots(model, opt_pol, opt_rew, imdp_abstr, init_state, ax)
+    # draw some other nice things here
+    import pdb; pdb.set_trace()
+    return 0
 
-samples = 25
-hybrid_imdp.update_probs(samples)
-
-
-output_folder = 'output/'+type(hybrid_dyn).__name__+'/'+str(samples)
-if not os.path.exists(output_folder):
-    os.makedirs(output_folder+'/')
-input_folder = 'input/'+type(hybrid_dyn).__name__+'/'+str(samples)
-if not os.path.exists(input_folder):
-    os.makedirs(input_folder+'/')
-writer=main.iMDP.hybrid_PRISM_writer(hybrid_imdp, hybrid_dyn.horizon, input_folder, output_folder, True)
-writer.write()
-writer.solve_PRISM(12)
-opt_pol, opt_delta, rew = writer.read()
-
-fig, axs = plt.subplots(2)
-axs[0].imshow(rew[2:3202:2].reshape(40,40), extent=[15,25,25,15])
-axs[1].imshow(rew[3:3202:2].reshape(40,40), extent=[15,25,25,15])
-plt.show()
+if __name__ == '__main__':
+    sys.exit(main())

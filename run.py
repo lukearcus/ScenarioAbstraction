@@ -5,7 +5,9 @@ import UI.choices as opt
 from main.model_defs import get_imdp
 from main.run_loop import run
 
-
+start_samples = 100
+num_samples=12801
+iters=1
 
 def main():
     """
@@ -20,7 +22,7 @@ def main():
     else:
         noise_lvl = None
     imdp_abstr, ss, dyn, init_state, grid, model_name = get_imdp(load_sel, model, noise_lvl, save_sel)
-    opt_pol, opt_rew = run(init_state, dyn, imdp_abstr, grid, lb_sat_prob, model_name, init_samples=25, max_samples=12801 , max_iters=32)
+    opt_pol, opt_rew = run(init_state, dyn, imdp_abstr, grid, lb_sat_prob, model_name, init_samples=start_samples, max_samples=num_samples, max_iters=iters)
     if model.split("_")[0] == "UAV":
         ax = ss.draw_space([0,1,2])
     else:

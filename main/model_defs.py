@@ -5,13 +5,14 @@ import main.iMDP as iMDP
 import UI.choices as opt
 import pickle
 
-def get_imdp(load_sel, model, noise_lvl, save_sel):
+def get_imdp(load_sel, model, noise_lvl, save_sel, nr_rooms=None):
     """
     Either loads or creates a fresh iMDP abstraction based on chosen model
     Then saves based on users preference (if generating a fresh abstraction)
     """
     if model == "n_room_heating" or model == "steered_n_room_heating" or model=="room_heating_robust":
-        nr_rooms = opt.rooms_choice()
+        if nr_rooms is None:
+            nr_rooms = opt.rooms_choice()
         model_name = model+"_"+str(nr_rooms)
     else:
         model_name = model
@@ -98,7 +99,9 @@ def get_imdp(load_sel, model, noise_lvl, save_sel):
             init_mode=0
             dyn = Dynamics.multi_room_heating(init_state, init_mode, sigma=sigma)
             init = [init_state, init_mode]
-            ss = StateSpace.ContStateSpace(nr_rooms, ((20, 20), (25, 25)), [], [((23, 23), (24, 24)) ])
+            T_low = 22
+            T_upp = 23
+            ss = StateSpace.ContStateSpace(nr_rooms, ((20, 20), (25, 25)), [], [((T_low, T_low), (T_upp, T_upp)) ])
             grid=(40,40)
         else:
             raise NotImplementedError
@@ -109,7 +112,9 @@ def get_imdp(load_sel, model, noise_lvl, save_sel):
             init_mode=0
             dyn = Dynamics.multi_room_heating_robust(init_state, init_mode, sigma=sigma)
             init = [init_state, init_mode]
-            ss = StateSpace.ContStateSpace(nr_rooms, ((20, 20), (25, 25)), [], [((23, 23), (24, 24)) ])
+            T_low = 22
+            T_upp = 23
+            ss = StateSpace.ContStateSpace(nr_rooms, ((20, 20), (25, 25)), [], [((T_low, T_low), (T_upp, T_upp)) ])
             grid=(40,40)
         else:
             raise NotImplementedError
@@ -120,7 +125,9 @@ def get_imdp(load_sel, model, noise_lvl, save_sel):
             init_mode = 0
             dyn = Dynamics.steered_multi_room(init_state, init_mode, sigma=sigma)
             init = [init_state, init_mode]
-            ss = StateSpace.ContStateSpace(nr_rooms, ((20, 20), (25, 25)), [], [((23, 23), (24, 24)) ])
+            T_low = 22
+            T_upp = 23
+            ss = StateSpace.ContStateSpace(nr_rooms, ((20, 20), (25, 25)), [], [((T_low, T_low), (T_upp, T_upp)) ])
             grid=(40,40)
         else:
             raise NotImplementedError
