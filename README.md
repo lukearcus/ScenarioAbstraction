@@ -17,7 +17,13 @@ use run.py to execute
 
 To reproduce experiments from the paper:
 
-UAV Plot: select UAV\_var\_noise with medium noise
-Room heating (main): select steered\_n\_room\_heating with 2 rooms and medium noise
-Room heating (unsteered): select n\_room\_heating with 2 rooms and medium noise
-More general formula: Run test.py 
+- UAV Plot: select UAV\_var\_noise with medium noise
+- Room heating (main): select steered\_n\_room\_heating with 2 rooms and medium noise
+- Room heating (unsteered): select n\_room\_heating with 2 rooms and medium noise
+- More general formula: Run test.py 
+
+To Do:
+- Bash file to run all experiments
+- Make parameters more user friendly
+- Tidy code
+- Ensure all options work
