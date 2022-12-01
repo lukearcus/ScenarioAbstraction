@@ -477,7 +477,7 @@ class PRISM_writer:
         file_prefix = output_folder + "/PRISM_out"
         self.vector_filename = file_prefix + "_vector.csv"
         self.policy_filename = file_prefix + "_policy.csv"
-        self.opt_thresh = False
+        self.opt_thresh = True
         self.thresh = 0.5
         self.max = True
         self.spec = "until"
@@ -505,8 +505,13 @@ class PRISM_writer:
         policy = np.genfromtxt(policy_file, delimiter=',', dtype='str')
         policy = np.flipud(policy)
 
-        optimal_policy= np.zeros(np.shape(policy)+tuple([2]))
-        optimal_reward = np.zeros(np.shape(policy)[1])
+        if len(np.shape(policy)) > 1:
+            optimal_policy= np.zeros(np.shape(policy)+tuple([2]))
+            optimal_reward = np.zeros(np.shape(policy)[1])
+            print(np.shape(optimal_policy))
+        else:
+            optimal_policy= np.zeros(tuple([1])+np.shape(policy)+tuple([2]))
+            optimal_reward = np.zeros(np.shape(policy)[0])
 
         optimal_reward = np.genfromtxt(vector_file).flatten()
         if not self.opt_thresh:
@@ -516,14 +521,25 @@ class PRISM_writer:
                 optimal_reward = optimal_reward <= self.thresh
 
 
-        for i, row in enumerate(policy):
-            for j, value in enumerate(row):
+        if len(np.shape(policy)) > 1:
+            for i, row in enumerate(policy):
+                for j, value in enumerate(row):
+                    if value != '':
+                        value_split = value.split('_')
+                        optimal_policy[i,j, 0] = int(value_split[1])
+                        optimal_policy[i,j, 1] = int(value_split[-1])
+                    else:
+                        optimal_policy[i,j] = -1
+        else:
+            i = 0
+            for j, value in enumerate(policy):
                 if value != '':
                     value_split = value.split('_')
                     optimal_policy[i,j, 0] = int(value_split[1])
                     optimal_policy[i,j, 1] = int(value_split[-1])
                 else:
                     optimal_policy[i,j] = -1
+
         return optimal_policy, optimal_reward
 
     def solve_PRISM(self,java_memory=2, prism_folder="~/Downloads/prism-imc/prism"):
@@ -560,7 +576,10 @@ class hybrid_PRISM_writer(PRISM_writer):
 
         counter = 0
         for m_num, m in enumerate(self.model.iMDPs):
-            substring = [str(counter)+': 1']
+            if self.max:
+                substring = [str(counter)+': 1 3']
+            else:
+                substring = [str(counter)+': 1 2']
             substring += ['' for i in m.States]
             for i, s in enumerate(m.States):
                 substring[i+1] = str(counter+i+1)+': 0'

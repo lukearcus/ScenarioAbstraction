@@ -1,8 +1,11 @@
 import main.iMDP as iMDP
 import os
+import numpy as np
+import options
 
-PRISM_MEM=30
-def run(init_state, dyn, test_imdp,  grid, min_lb, model, init_samples=25, max_iters=20, max_samples=6401):
+PRISM_MEM=options.prism_mem
+PRISM_PATH=options.prism_path
+def run(init_state, dyn, test_imdp,  grid, min_lb, model, init_samples=25, max_iters=20, max_samples=6401, test=False):
     lb_sat_prob = 0
     max_samples=max(init_samples+1,max_samples)
     i = 0
@@ -30,12 +33,14 @@ def run(init_state, dyn, test_imdp,  grid, min_lb, model, init_samples=25, max_i
                                 test_imdp, dyn.horizon, input_folder, output_folder, _explicit=True
                                 )
         # for complex formula, first we do P>=0.7(safe until warm)
-        writer.max = True
-        writer.thresh = 0.7
+        if test:
+            writer.opt_thresh = False
+            writer.max = True
+            writer.thresh = 0.9
 
         writer.write()
         print("Solving iMDP")
-        writer.solve_PRISM(PRISM_MEM)
+        writer.solve_PRISM(PRISM_MEM, PRISM_PATH)
         opt_pol, rew = writer.read()
         lb_sat_prob = rew[tuple(init_id)]
         print("lower bound on initial state: "+str(lb_sat_prob))
@@ -43,23 +48,45 @@ def run(init_state, dyn, test_imdp,  grid, min_lb, model, init_samples=25, max_i
         samples *= 2
 
         #Below is to do more complex formulae
+        if test:
+            second_sats = np.copy(rew)
 
-        second_sats = rew
+            writer.max = False
+            writer.thresh = 0.5
 
-        writer.max = False
-        writer.thresh = 0.4
+            goals = np.array([[[20, 20],[25,21]]])
+            #unsafes = np.array([[[]]])
+            for m in test_imdp.iMDPs:
+               m.ss.goals = goals
+               m.Goals = m.find_goals()
 
-        writer._write_labels()
-        writer.spec = "until"
-        writer.writePRISM_specification()
+            writer._write_labels()
+            writer.spec = "until"
+            writer.specification = writer.writePRISM_specification()
+            
+            writer.solve_PRISM(PRISM_MEM)
+            opt_pol, rew = writer.read()
 
-        writer.max = True
-        writer.thresh = 0.5
+            writer.max = True
+            writer.thresh = 0.6
+           
+            rew_1 = rew[:1601]
+            rew_2 = rew[1601:]
+            for m in test_imdp.iMDPs:
+               m.Goals = (np.where(rew_1)[0]-1).tolist()
 
-        writer._write_labels()
-        writer.spec = "next"
-        writer.writePRISM_specification()
+            writer._write_labels()
+            writer.spec = "until"
+            writer.N = 1
+            writer.specification = writer.writePRISM_specification()
 
+            writer.solve_PRISM(PRISM_MEM)
+            opt_pol, rew = writer.read()
+
+            final_rew = np.logical_and(rew, second_sats)
+
+            import pdb; pdb.set_trace()
+            rew = final_rew
 
     return opt_pol, rew
 

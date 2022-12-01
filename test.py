@@ -4,7 +4,7 @@ import UI.plot_funcs as plot_funcs
 from main.model_defs import get_imdp
 from main.run_loop import run
 
-start_samples = 100
+start_samples = 3200
 num_samples=12801
 iters=1
 
@@ -22,7 +22,7 @@ def main():
     else:
         noise_lvl = None
     imdp_abstr, ss, dyn, init_state, grid, model_name = get_imdp(load_sel, model, noise_lvl, save_sel,2)
-    opt_pol, opt_rew = run(init_state, dyn, imdp_abstr, grid, lb_sat_prob, model_name, init_samples=start_samples, max_samples=num_samples, max_iters=iters)
+    opt_pol, opt_rew = run(init_state, dyn, imdp_abstr, grid, lb_sat_prob, model_name, init_samples=start_samples, max_samples=num_samples, max_iters=iters, test=True)
     if model.split("_")[0] == "UAV":
         ax = ss.draw_space([0,1,2])
     else:
