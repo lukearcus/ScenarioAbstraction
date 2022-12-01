@@ -6,6 +6,8 @@ Edit options.py to choose PRISM max memory usage, and enter PRISM path
 
 use run.py to execute
 
+For full details, see paper.pdf
+
 ## Dependencies
 - Python packages:
     - numpy 1.23.4
