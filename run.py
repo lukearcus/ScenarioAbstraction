@@ -4,6 +4,7 @@ import UI.plot_funcs as plot_funcs
 import UI.choices as opt
 from main.model_defs import get_imdp
 from main.run_loop import run
+from Simulation.run import run as run_sim
 
 start_samples = 100
 num_samples=12801
@@ -30,6 +31,7 @@ def main():
     plot_funcs.create_plots(model, opt_pol, opt_rew, imdp_abstr, init_state, ax)
     # draw some other nice things here
     import pdb; pdb.set_trace()
+    run_sim(imdp_abstr, dyn, opt_pol)
     return 0
 
 if __name__ == '__main__':

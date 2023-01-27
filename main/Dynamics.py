@@ -113,11 +113,13 @@ class steered_MC(hybrid_dynamic_base):
     def state_update(self, cont_control, disc_control=0):
         # update continuous state
         curr_dyn = self.individual_systems[self.mode]
-        curr_dyn.state_update(control)
+        curr_dyn.state_update(cont_control)
         self.state = curr_dyn.state
 
         # update discrete state
-        self.mode = np.random.choice(self.N_modes, p = self.transition_matrices[self.mode])
+        import pdb; pdb.set_trace()
+        
+        self.mode = np.random.choice(self.N_modes, p = self.transition_matrices[self.mode].flatten())
         
         # store current state in individual system state
         self.individual_systems[self.mode].state = self.state
@@ -347,7 +349,7 @@ class LTI_gauss(dynamic_base):
         self.state = self.A*self.state + self.B*control + self.Q + self.noise()
 
     def noise(self):
-        return np.random.multivariate_normal(self.mu, self.sigma)
+        return np.random.multivariate_normal(self.mu.flatten(), self.sigma)
 
 class heat_1_room(dynamic_base):
     """

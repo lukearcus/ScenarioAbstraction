@@ -591,7 +591,7 @@ class hybrid_PRISM_writer(PRISM_writer):
                 substring[i+1] += ' 2'
             
             for i in m.Crits:
-                substring[i+1] ++ ' 3'
+                substring[i+1] += ' 3'
 
             label_file_list += substring
             counter += len(m.States)+1
