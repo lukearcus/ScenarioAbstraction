@@ -37,13 +37,24 @@ class hybrid_dynamic_base:
     hybrid = True
     steered = False
     
-    def __init__(self, init_state, init_mode, T, A, B, Q, u_max, u_min, sigma, transition_matrix, N_modes):
+    def __init__(self, init_state, init_mode, T, A, B, Q, u_max, u_min, sigma, transition_matrix, true_trans_mat, N_modes):
         self.state = init_state
         self.mode = init_mode
         self.T=T
         self.N_modes = N_modes
         
         self.transition_matrix = transition_matrix
+        self.true_trans_mat = true_trans_mat
+        #self.true_trans_mat = np.zeros((transition_matrix.shape[0],transition_matrix.shape[1]))
+        #for m, mode_trans in enumerate(transition_matrix):
+        #    for m_next_id, trans_prob in enumerate(mode_trans):
+        #        if trans_prob.size != 1:
+        #            if m_next_id+1 == self.true_trans_mat.shape[1]:
+        #                self.true_trans_mat[m,m_next_id] = \
+        #                    1-np.sum(self.true_trans_mat[m,:]) # we assume thi
+        #            else:
+        #                self.true_trans_mat[m,m_next_id] = \
+        #                    np.random.uniform(trans_prob[0],trans_prob[1])
         self.individual_systems = [LTI_gauss(init_state, A[i], B[i], Q[i], u_max[i], u_min[i], sigma[i]) for i in range(2)]
 
 
@@ -55,7 +66,7 @@ class hybrid_dynamic_base:
         self.state = curr_dyn.state
 
         # update discrete state
-        self.mode = np.random.choice(self.N_modes, p = self.transition_matrix[self.mode])
+        self.mode = np.random.choice(self.N_modes, p = self.true_trans_mat[self.mode])
         
         # store current state in individual system state
         self.individual_systems[self.mode].state = self.state
@@ -75,9 +86,10 @@ class single_hybrid(hybrid_dynamic_base):
         self.T=system.T
         self.mode = 0
         self.transition_matrix = np.array([[1]])
+        self.true_trans_mat = np.array([[1]])
         if hasattr(system, 'mu'):
-            self.mu = [mu]
-            self.sigma = [sigma]
+            self.mu = [system.mu]
+            self.sigma = [system.sigma]
         else:
             self.noises = [self.noise]
 
@@ -91,7 +103,7 @@ class steered_base(hybrid_dynamic_base):
         self.state = curr_dyn.state
 
         # update discrete state
-        self.mode = np.random.choice(self.N_modes, p = self.transition_matrices[self.mode][disc_control])
+        self.mode = np.random.choice(self.N_modes, p = self.true_trans_mat[self.mode][disc_control])
         
         # store current state in individual system state
         self.individual_systems[self.mode].state = self.state
@@ -109,17 +121,19 @@ class steered_MC(hybrid_dynamic_base):
        self.N_modes = MC_model.N_modes
        self.individual_systems = MC_model.individual_systems
        self.transition_matrices = [np.expand_dims(probs,0) for probs in MC_model.transition_matrix]
+       self.true_trans_mats = [np.expand_dims(probs,0) for probs in MC_model.true_trans_mat]
+        
 
     def state_update(self, cont_control, disc_control=0):
         # update continuous state
+       
         curr_dyn = self.individual_systems[self.mode]
         curr_dyn.state_update(cont_control)
         self.state = curr_dyn.state
 
         # update discrete state
-        import pdb; pdb.set_trace()
         
-        self.mode = np.random.choice(self.N_modes, p = self.transition_matrices[self.mode].flatten())
+        self.mode = np.random.choice(self.N_modes, p = self.true_trans_mats[self.mode].flatten())
         
         # store current state in individual system state
         self.individual_systems[self.mode].state = self.state
@@ -145,12 +159,13 @@ class multi_room_heating(hybrid_dynamic_base):
             B = [np.array([[c_1,0],[0,c_2/2]]).T, np.array([[c_1/2,0],[0, c_2]]).T]
             Q = [np.array([[b_1*ambient_temp, b_2*ambient_temp]]).T for i in range(nr_rooms)]
             transition_matrix = np.array([[(0.4,0.6), (0.4,0.6)],[(0.4,0.6), (0.4,0.6)]])
+            true_trans_mat = np.array([[0.5,0.5],[0.5,0.5]])
         elif nr_rooms == 3:
             a_12 = 0.022
             a_13 = 0.022
             a_23 = 0.001
             A = [np.array([[1, a_12, a_13],[a_12, 1, a_23],[a_13, a_23, 1]]) for i in range(nr_rooms)]
-        super().__init__(init_state, init_mode, T, A, B, Q, u_max, u_min, sigma, transition_matrix, nr_rooms)
+        super().__init__(init_state, init_mode, T, A, B, Q, u_max, u_min, sigma, transition_matrix, true_trans_mat, nr_rooms)
 
 
 class unsteered_test(hybrid_dynamic_base):
@@ -234,6 +249,7 @@ class steered_multi_room(multi_room_heating):
             # now one transition matrix for each mode, each row is an action and contains transition probabilities
             # to next mode
             self.transition_matrices = [np.array([[(0.8,0.99),(0.01,0.2)],[(0.01,0.2),(0.8,0.99)]]) for i in range(2)]
+            self.true_trans_mats = [np.array([[0.9,0.1],[0.1,0.9]]) for i in range(2)]
     def state_update(self, cont_control, disc_control):
         # update continuous state
         curr_dyn = self.individual_systems[self.mode]
@@ -241,7 +257,7 @@ class steered_multi_room(multi_room_heating):
         self.state = curr_dyn.state
 
         # update discrete state
-        self.mode = np.random.choice(self.N_modes, p = self.transition_matrices[self.mode][disc_control])
+        self.mode = np.random.choice(self.N_modes, p = self.true_trans_mats[self.mode][disc_control])
         
         # store current state in individual system state
         self.individual_systems[self.mode].state = self.state
@@ -262,6 +278,7 @@ class robust_test(hybrid_dynamic_base):
         self.u_max = [np.ones((2,1))*5 for i in range(2)]
         self.u_min = [np.ones((2,1))*-5 for i in range(2)]
         self.transition_matrix = [np.random.random((2,2)) for i in range(2)]
+        self.true_trans_mat = np.copy(self.transition_matrix)
         self.sigma = [np.diag([sigma for i in range(2)]) for i in range(2)]
         self.mu = [np.zeros((2,1)) for i in range(2)]
         self.individual_systems = [LTI_gauss(init_state, self.A_mats[i], self.B_mats[i], self.Q_mats[i], self.u_max[i], self.u_min[i], self.sigma[i]) for i in range(2)]        
@@ -291,6 +308,7 @@ class multi_room_heating_robust(hybrid_dynamic_base):
             self.B_mats = [np.array([[c_1,0],[0,c_2/2]]).T, np.array([[c_1/2,0],[0, c_2]]).T]
             self.Q_mats = [np.array([[b_1*ambient_temp, b_2*ambient_temp]]).T for i in range(nr_rooms)]
             self.transition_matrix = np.array([[0.5, 0.5],[0.5,0.5]])
+            self.true_trans_mat = np.copy(self.transition_matrix)
         else:
             raise NotImplementedError
         super().__init__(init_state, init_mode, T, self.A_mats, self.B_mats, self.Q_mats, self.u_max, self.u_min, self.sigma, self.transition_matrix, nr_rooms)
@@ -312,6 +330,7 @@ class separate_robust_test(hybrid_dynamic_base):
         b = [np.array([[1,0],[0,1]]), np.array([[1,0],[0, 1]])]
         q = [np.array([[0,0]]).T for i in range(2)]
         self.transition_matrix = np.array([[0.9999, 0.0001],[0.0001,0.9999]])
+        self.true_trans_mat = np.copy(self.transition_matrix)
         self.individual_systems = [LTI_gauss(init_state, a[i], b[i], q[i], u_max[i], u_min[i], sigma) for i in range(2)]        
 
 class LTI_gauss(dynamic_base):
@@ -346,10 +365,10 @@ class LTI_gauss(dynamic_base):
             self.B_full_rank = np.hstack(tuple(Bs))
 
     def state_update(self, control):
-        self.state = self.A*self.state + self.B*control + self.Q + self.noise()
+        self.state = self.A@self.state + self.B@control + self.Q + self.noise()
 
     def noise(self):
-        return np.random.multivariate_normal(self.mu.flatten(), self.sigma)
+        return np.random.multivariate_normal(self.mu.flatten(), self.sigma)[:,np.newaxis]
 
 class heat_1_room(dynamic_base):
     """
@@ -425,7 +444,7 @@ class heat_1_room(dynamic_base):
             self.state = self.A @ self.state + self.B @ control + self.Q+ self.noise()
 
     def noise(self):
-        return np.random.multivariate_normal(self.mu, self.sigma)
+        return np.random.multivariate_normal(self.mu.flatten(), self.sigma)[:,np.newaxis]
 
 class Drone_base(dynamic_base):
     """
@@ -520,7 +539,7 @@ class Drone_gauss(Drone_base):
         super().__init__(init_state, T,max_acc, min_acc)
 
     def noise(self):
-        return np.random.multivariate_normal(self.mu, self.sigma)
+        return np.random.multivariate_normal(self.mu.flatten(), self.sigma)[:,np.newaxis]
 
 class Full_Drone_gauss(Full_Drone_Base):
     def __init__(self, init_state, T,max_acc = float('inf'), min_acc = -float('inf'), _mu=0, _sigma=1):
@@ -529,7 +548,7 @@ class Full_Drone_gauss(Full_Drone_Base):
         super().__init__(init_state, T,max_acc, min_acc)
 
     def noise(self):
-        return self.A_1_step @ np.random.multivariate_normal(self.mu, self.sigma)+ np.random.multivariate_normal(self.mu, self.sigma)
+        return self.A_1_step @ np.random.multivariate_normal(self.mu.flatten(), self.sigma)[:,np.newaxis]+ np.random.multivariate_normal(self.mu.flatten(), self.sigma)[:,np.newaxis]
 
 
 

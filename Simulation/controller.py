@@ -18,8 +18,10 @@ class controller:
         B_pinv = np.linalg.pinv(sys.B_full_rank)
         A = sys.A_full_rank
         if state_ind == len(self.states):
-            return np.zeros((B_pinv.shape[0],1))
+            return np.zeros((B_pinv.shape[0],1)), 0
         sel_act = self.policy[self.timestep][state_ind+1+r*(len(self.states)+1)]
+        if sel_act[0] == -1:
+            return np.zeros((B_pinv.shape[0],1)), 0
         cont_act = int(sel_act[0])
         disc_act = int(sel_act[1])
         goal_pos = self.states[cont_act]

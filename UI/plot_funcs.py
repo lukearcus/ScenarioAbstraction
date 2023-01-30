@@ -2,10 +2,16 @@ import matplotlib.pyplot as plt
 from mpl_toolkits import mplot3d
 import numpy as np
 
-def create_plots(model, opt_pol, opt_rew, imdp, init, ax=None):
+def create_plots(model, opt_pol, opt_rew, imdp, init, ax=None, sim_states = None):
     """
     Creates some plots depending on model
     """
+    if sim_states is not None:
+        if len(sim_states) == 2:
+            ax.plot(*sim_states)
+        else:
+            ax.plot3D(*sim_states)
+        plt.show()
     if model=="1room heating":
         ax, im = heatmap(opt_rew, (19,20), [19.1,22.9], [36,40], ax)
         plt.colorbar(im);

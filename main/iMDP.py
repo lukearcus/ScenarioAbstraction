@@ -315,7 +315,7 @@ class iMDP:
             reshaped = signs.reshape(shape)
             summed = np.logical_xor(reshaped[:,:,0,:],reshaped[:,:,1,:])
             abs_sum = np.all(summed,2)
-            list_out =  [np.where(abs_sum[i,:]) if np.any(abs_sum[i,:]) else len(self.States) for i in range(num_ins) ]
+            list_out =  [np.where(abs_sum[i,:]) if np.any(abs_sum[i,:]) else [[len(self.States)]] for i in range(num_ins) ]
         else:
             shape = (num_ins,len(state_inds_to_check),2,self.corner_array.shape[2])
             first = lambda x: 2*x
@@ -439,6 +439,7 @@ class hybrid_iMDP:
         if not Dynamics.robust:
             self.iMDPs = [iMDP(Cont_state_space, dyn, parts, _beta) for dyn in Dynamics.individual_systems]
             self.discrete_trans = Dynamics.transition_matrices
+
         else:
             self.iMDPs = [iMDP(Cont_state_space, Dynamics, parts, _beta)]
             self.discrete_trans = np.array([[[[1,1]]]])
@@ -746,6 +747,7 @@ class hybrid_PRISM_writer(PRISM_writer):
                 if self.max:
                     if self.spec == "until":
                         specification = 'Pmaxmin=? [ !"critical" U<='+str(horizonLen)+' "reached" ]'
+                        specification = "Pmaxmin=? [ F<="+str(horizonLen)+' "reached" ]'
                     else:
                         specification = 'Pmaxmin=? [ X"reached" ]'
                 else:

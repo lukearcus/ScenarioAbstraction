@@ -162,12 +162,12 @@ def get_imdp(load_sel, model, noise_lvl, save_sel, nr_rooms=None):
         grid=(100,100)
         init = [init, 0]
     
+    if dyn.hybrid == False:
+        init = [init, 0]
+        dyn = Dynamics.single_hybrid(dyn) # can make single system into a hybrid with 1 discrete mode
+    if not dyn.steered and not dyn.robust:
+        dyn = Dynamics.steered_MC(dyn)
     if load_sel == "N":
-        if dyn.hybrid == False:
-            init = [init, 0]
-            dyn = Dynamics.single_hybrid(dyn) # can make single system into a hybrid with 1 discrete mode
-        if not dyn.steered and not dyn.robust:
-            dyn = Dynamics.steered_MC(dyn)
         imdp_abstr = iMDP.hybrid_iMDP(ss,dyn,grid)
         if save_sel == 'Y':
             with open("stored_abstractions/"+model_name+'_imdp.pkl', 'wb') as outp:

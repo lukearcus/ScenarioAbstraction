@@ -1,2 +1,2 @@
 prism_mem=30
-prism_path="~/Downloads/prism-imc/prism"
+prism_path="~/code/prism-imc/prism"
